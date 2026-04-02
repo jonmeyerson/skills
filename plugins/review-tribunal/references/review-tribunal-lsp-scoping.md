@@ -1,17 +1,6 @@
-# LSP Scoping Workflow
+# LSP Scoping Workflow (Phases A–E)
 
-Applied conditionally when diff line count ≥ 5000 lines.
-
-## Quick Gate
-
-Measure the diff line count:
-
-```powershell
-(Get-Content "{diff_path}").Count
-```
-
-- **Under 5000 lines:** Skip LSP entirely; set `{dispatch_mode}` = `full` and proceed to Step 2
-- **5000+ lines:** Run Phases A–E below
+Executed only when diff line count ≥ 5000 lines (see orchestrator for gate logic).
 
 **Important:** Start Phase A immediately — LSP server startup can be slow. Beginning discovery now prevents it from blocking subagent dispatch later. Phases B–E depend on LSP being ready, so start the server in Phase A and wait for readiness before issuing any LSP requests.
 

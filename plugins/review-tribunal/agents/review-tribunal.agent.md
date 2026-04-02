@@ -67,7 +67,7 @@ Set `{diff_source}` = `uncommitted:{branch}`.
 - **Radio — Tribunal size:**
   - "1 — one Skeptic, one Advocate" (default)
   - "2 — two Skeptics, two Advocates"
-  - "3 — three Skeptics, three Advocates" *(disabled)*
+  - "3 — three Skeptics, three Advocates"
 - **Text field — Starting debate rounds:** Default: `1`. Accepts any positive integer.
 
 Record `{goal}`, `{tribunal_size}`, `{debate_rounds}`.
@@ -102,7 +102,10 @@ If "Assign independently": run Phase 4a for all Skeptic and Advocate slots simul
 
 **Parallel slot dispatch:** Present all slots that need a model in a single `ask_user`
 call — one Radio question per slot, all in the same form. Do not ask for one slot,
-wait, then ask for the next. Example for tribunal size 2, independent assignment:
+wait, then ask for the next.
+
+**If "Assign independently":** Include all Skeptic and Advocate slots.
+Example for tribunal size 2:
 
 ```
 ask_user([
@@ -113,8 +116,16 @@ ask_user([
 ])
 ```
 
-For "Use same model for matching slots" mode, include only the Skeptic slots in the
-parallel call; Advocate slots are derived automatically afterward.
+**If "Use same model for matching slots":** Include only the Skeptic slots; Advocate slots are auto-derived.
+Example for tribunal size 2:
+
+```
+ask_user([
+  { question: "Skeptic 1 model",   options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
+  { question: "Skeptic 2 model",   options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
+])
+// Advocate 1 = Skeptic 1, Advocate 2 = Skeptic 2 (automatic)
+```
 
 **Provider uniqueness:** No two slots within the same role (Skeptics, Advocates) may
 share a provider. Slots across different roles may share a provider.
@@ -122,6 +133,20 @@ If the user's selections violate this rule, do not silently accept them — re-p
 the conflicting slot(s) in a new `ask_user` call, and explain the conflict. Keep
 re-prompting until every slot in each role has a distinct provider. Do not proceed until
 all selections are valid.
+
+**Re-prompt Example:**
+```
+User selected: Skeptic 1 = claude-sonnet-4.6, Skeptic 2 = claude-haiku-4.5 ✓
+Validation: Both Anthropic providers. INVALID.
+
+Re-prompt message:
+"Skeptic 1 and Skeptic 2 both use Anthropic models. Each Skeptic slot must use a different provider.
+Please select a different provider for Skeptic 2 — use OpenAI (gpt-5.4, gpt-5.3-codex)."
+
+ask_user([
+  { question: "Skeptic 2 model (conflict)", options: ["gpt-5.4", "gpt-5.3-codex"] }
+])
+```
 
 ---
 
@@ -150,7 +175,7 @@ Load [review-tribunal-schema.md](../references/review-tribunal-schema.md) and ex
 
 All review files are written to `{session_store}/files/`.
 
-Run `ReviewPatch.ps1` to generate the patch and the changed-file list.
+Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) to generate the patch and the changed-file list.
 The `-OutputPath` must be constructed by the orchestrator before invoking the script.
 
 **Mode: `branch:<base>..<head>`**
@@ -178,7 +203,7 @@ If `{files_changed}` is empty: output `No changes detected between the specified
 
 Set `{diff_path}` = `{session_store}/files/review-{review_id}.patch`
 
-After the patch is written, run `ReviewIndex.ps1` to generate the index file:
+After the patch is written, run [ReviewIndex.ps1](../scripts/ReviewIndex.ps1) to generate the index file:
 
 ```powershell
 & ReviewIndex.ps1 `
