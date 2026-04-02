@@ -19,8 +19,8 @@ All state is persisted in session database in the `session_store` (SQLite). All 
 
 <instructions>
 Collect configuration in order. Skip any field already provided in the prompt. Gate to single git call: `git rev-parse --abbrev-ref HEAD` (Phase 2 only).
-Phase order is strict; Phase 4a depends on Phase 4. Collect all slots in one ask_user call (no sequential prompting within Phase 4a).
-[See quick-start examples](../prompts/review-tribunal-trigger.prompt.md)
+Phase order is strict; Phase 4a depends on Phase 4.
+[See quick-start examples](../references/review-tribunal-quick-start.md)
 </instructions>
 
 **Collect configuration:**
@@ -42,52 +42,31 @@ Phase order is strict; Phase 4a depends on Phase 4. Collect all slots in one ask
 | 2 | Skeptic 1, Skeptic 2, Advocate 1, Advocate 2, Judge |
 | 3 | Skeptic 1–3, Advocate 1–3, Judge |
 
-First, ask:
+First, assign models to all slots (Skeptic, Advocate, Judge):
 
-- **Radio — Model assignment mode:**
-  - "Assign Skeptic and Advocate slots independently" (default)
-  - "Use same model for matching Skeptic and Advocate slots"
+**Phase 4a — Model assignment:**
 
-If "Use same model for matching Skeptic and Advocate slots": run Phase 4a
-for Skeptic slots only. Advocate slots automatically mirror the matching Skeptic slot
-(Advocate 1 = Skeptic 1, Advocate 2 = Skeptic 2). Skip Phase 4a for Advocate slots
-and proceed directly to Judge assignment.
+Models available:
+- Anthropic: `claude-sonnet-4.6` · `claude-haiku-4.5`
+- OpenAI: `gpt-5.4` · `gpt-5.3-codex`
 
-If "Assign independently": run Phase 4a for all Skeptic and Advocate slots simultaneously
-(see parallel dispatch rule below), then ask for the Judge slot separately.
-
-**Phase 4a — Model**:
-- **Radio — Model (with custom):**
-  - Anthropic: `claude-sonnet-4.6` · `claude-haiku-4.5`
-  - OpenAI: `gpt-5.4` · `gpt-5.3-codex`
-  - Google: *(disabled — not currently supported)*
-
-**Parallel slot dispatch:** Present all slots that need a model in a single `ask_user`
-call — one Radio question per slot, all in the same form. Do not ask for one slot,
-wait, then ask for the next.
-
-**If "Assign independently":** Include all Skeptic and Advocate slots.
-Example for tribunal size 2:
+Ask Skeptic and Advocate slots in paired calls:
 
 ```
 ask_user([
-  { question: "Skeptic 1 model",   options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
-  { question: "Skeptic 2 model",   options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
-  { question: "Advocate 1 model",  options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
-  { question: "Advocate 2 model",  options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
+  { question: "Skeptic 1 model", options: [...] },
+  { question: "Advocate 1 model", options: [...] },
 ])
-```
 
-**If "Use same model for matching slots":** Include only the Skeptic slots; Advocate slots are auto-derived.
-Example for tribunal size 2:
-
-```
 ask_user([
-  { question: "Skeptic 1 model",   options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
-  { question: "Skeptic 2 model",   options: ["claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex"] },
+  { question: "Skeptic 2 model", options: [...provider-filtered...] },
+  { question: "Advocate 2 model", options: [...provider-filtered...] },
 ])
-// Advocate 1 = Skeptic 1, Advocate 2 = Skeptic 2 (automatic)
 ```
+
+Paired slots (Skeptic N + Advocate N) asked together. Provider filtering: no two slots in same role share a provider.
+
+After all Skeptic and Advocate slots, ask for Judge model separately (no provider constraints).
 
 **Provider uniqueness:** No two slots within the same role (Skeptics, Advocates) may
 share a provider. Slots across different roles may share a provider.
