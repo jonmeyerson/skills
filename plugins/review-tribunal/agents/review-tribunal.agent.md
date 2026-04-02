@@ -49,7 +49,7 @@ First, assign models to all slots (Skeptic, Advocate, Judge):
 Models available:
 - Anthropic: `claude-sonnet-4.6` · `claude-haiku-4.5`
 - OpenAI: `gpt-5.4` · `gpt-5.3-codex`
-- Google: (models TBD)
+- Google: `gemini-2.5` · `gemini-3-flash`
 
 Ask Skeptic and Advocate slots in paired calls:
 
