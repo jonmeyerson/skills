@@ -1,0 +1,22 @@
+{
+  "name": "jonmeyerson-skills",
+  "metadata": {
+    "description": "Jonathan Meyerson's personal collection of AI agentic plugins — reusable, self-contained skills for agent runtimes.",
+    "version": "1.0.0"
+  },
+  "owner": {
+    "name": "Jonathan Meyerson",
+    "email": "30121145+jonmeyerson@users.noreply.github.com"
+  },
+  "plugins": [
+    {
+      "name": "review-tribunal",
+      "source": "./plugins/review-tribunal",
+      "description": "Adversarial code review plugin. Parallel Skeptics attack the implementation, parallel Advocates defend it, and a Judge rules on every finding by reading the code directly. Configurable tribunal size (1-2 pairs) with full model diversity across roles.",
+      "version": "1.0.0",
+      "agents": [
+        "./agents"
+      ]
+    }
+  ]
+}
