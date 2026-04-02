@@ -32,74 +32,7 @@ arguments if present and skip the relevant calls. Execute calls in order — eac
 complete before the next begins. Never merge calls. 
 </instructions>
 <examples>
-  <!-- What the user typed → what is already known → what Step 0 still asks for -->
-
-  <example id="step0.1">
-    <user_input>Compare the uncommitted changes to branch head, using a tribunal of two, with 3 rounds of deliberation.</user_input>
-    <parsed>
-      diff_mode    = "uncommitted"   (branch = current, resolved via git rev-parse)
-      tribunal_size = 2
-      debate_rounds = 3
-    </parsed>
-    <still_needed>Goal (Phase 3), model assignments (Phase 4)</still_needed>
-    <note>Do not ask for diff mode or size again — they are already set.</note>
-  </example>
-
-  <example id="step0.2">
-    <user_input>Compare branch feature/XYZ to develop, using a tribunal size of one, with 3 rounds of deliberation.</user_input>
-    <parsed>
-      diff_mode    = "branch"
-      base         = "develop"
-      head         = "feature/XYZ"
-      diff_source  = "branch:develop..feature/XYZ"
-      tribunal_size = 1
-      debate_rounds = 3
-    </parsed>
-    <still_needed>Goal (Phase 3), model assignments (Phase 4)</still_needed>
-    <note>Do not ask for diff targets again — base and head are both set.</note>
-  </example>
-
-  <example id="step0.3">
-    <user_input>Compare the uncommitted changes to branch head, using a tribunal of two, using claude-sonnet-4.6 for both Skeptic slots and gpt-5.4 for both Advocate slots, and claude-sonnet-4.6 for the Judge, with 3 rounds of deliberation.</user_input>
-    <parsed>
-      diff_mode         = "uncommitted"
-      tribunal_size     = 2
-      debate_rounds     = 3
-      skeptic_models    = ["claude-sonnet-4.6", "claude-sonnet-4.6"]   ← INVALID: same provider twice in one role
-    </parsed>
-    <still_needed>Goal (Phase 3); re-prompt Phase 4 for Skeptic 2 — provider uniqueness rule violated (both Skeptics assigned Anthropic)</still_needed>
-    <note>Flag the duplicate provider and re-prompt only the conflicting slot. Do not restart Phase 4 from scratch.</note>
-  </example>
-
-  <example id="step0.4">
-    <user_input>Compare the uncommitted changes to branch head, using a tribunal of two, using claude-sonnet-4.6 for Skeptics and gpt-5.4 for Advocates and claude-sonnet-4.6 for the Judge, with 3 rounds of deliberation.</user_input>
-    <parsed>
-      diff_mode         = "uncommitted"
-      tribunal_size     = 2
-      debate_rounds     = 3
-      skeptic_models    = ["claude-sonnet-4.6", "claude-sonnet-4.6"]   ← same provider — INVALID (same as example 3)
-    </parsed>
-    <still_needed>Goal (Phase 3); re-prompt Skeptic 2 model</still_needed>
-    <note>
-      "Using claude-sonnet-4.6 for Skeptics" assigns the same model to both Skeptic slots,
-      which violates the provider-uniqueness rule. Do not silently accept it.
-      Re-prompt Phase 4a for Skeptic 2 only.
-    </note>
-  </example>
-
-  <example id="step0.5">
-    <user_input>Compare branch feature/XYZ to develop, tribunal size 2, 2 rounds. Goal: verify the new auth middleware handles token expiry correctly. Skeptic 1 = claude-sonnet-4.6, Skeptic 2 = gpt-5.4, Advocate 1 = gpt-5.4, Advocate 2 = claude-sonnet-4.6, Judge = claude-sonnet-4.6.</user_input>
-    <parsed>
-      diff_source    = "branch:develop..feature/XYZ"
-      tribunal_size  = 2
-      debate_rounds  = 2
-      goal           = "verify the new auth middleware handles token expiry correctly"
-      skeptic_models = ["claude-sonnet-4.6", "gpt-5.4"]       ← valid: different providers
-      advocate_models= ["gpt-5.4", "claude-sonnet-4.6"]       ← valid: different providers
-      judge_model    = "claude-sonnet-4.6"
-    </parsed>
-    <still_needed>Nothing — all phases satisfied. Proceed directly to review_id resolution.</still_needed>
-  </example>
+See `../examples/tribunal-trigger-examples.md` for quick-start invocation examples.
 </examples>
 
 

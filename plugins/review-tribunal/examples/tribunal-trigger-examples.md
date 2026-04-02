@@ -1,9 +1,3 @@
----
-name: review-tribunal-trigger
-description: Quick-start prompts for triggering adversarial code review with argument hints
-argument-hint: "<branch:base..head | uncommitted:branch> -- <goal>"
----
-
 # Quick Tribunal Triggers
 
 Use these prompts to quickly invoke the Review Tribunal with argument hints. The format is:
