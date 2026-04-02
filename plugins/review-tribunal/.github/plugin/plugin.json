@@ -13,7 +13,5 @@
     "quality",
     "security"
   ],
-  "agents": [
-    "./agents"
-  ]
+  "agents": "agents/"
 }
