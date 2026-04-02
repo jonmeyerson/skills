@@ -32,7 +32,7 @@ arguments if present and skip the relevant calls. Execute calls in order — eac
 complete before the next begins. Never merge calls. 
 </instructions>
 <examples>
-See `../examples/tribunal-trigger-examples.md` for quick-start invocation examples.
+See [review-tribunal-trigger.prompt.md](../prompts/review-tribunal-trigger.prompt.md) for quick-start invocation examples.
 </examples>
 
 
@@ -142,7 +142,7 @@ If exists, auto-suffix (`-2`, `-3`...) until unique.
 
 ## Schema
 
-[See database schema definition](../references/review-tribunal-schema.md) — Initialize on first run. Never drop existing tables.
+Load [review-tribunal-schema.md](../references/review-tribunal-schema.md) and execute all `CREATE TABLE IF NOT EXISTS` statements before any other SQL. This runs once at startup — if tables already exist, it is a no-op.
 
 ---
 
@@ -235,7 +235,15 @@ explicit mapping falls back to `{goal}`.
 
 ### Phase — LSP Scoping
 
-[Full LSP scoping workflow (Phases A–E)](../references/review-tribunal-lsp-scoping.md) — Applies only if diff ≥ 5000 lines.
+Measure the diff line count:
+
+```powershell
+(Get-Content "{diff_path}").Count
+```
+
+If under 5000: set `{dispatch_mode}` = `full` and proceed to Step 2.
+
+If 5000 or above: set `{dispatch_mode}` = `scoped` and execute the [full LSP scoping workflow (Phases A–E)](../references/review-tribunal-lsp-scoping.md).
 
 Run `{debate_rounds}` rounds. Each round follows this exact sequence.
 
