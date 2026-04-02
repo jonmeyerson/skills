@@ -55,16 +55,16 @@ Ask Skeptic and Advocate slots in paired calls:
 ```
 ask_user([
   { question: "Skeptic 1 model", options: [...] },
-  { question: "Advocate 1 model", options: [...] },
+  { question: "Advocate 1 model", options: [...provider-filtered...] },
 ])
 
 ask_user([
-  { question: "Skeptic 2 model", options: [...provider-filtered...] },
+  { question: "Skeptic 2 model", options: [...] },
   { question: "Advocate 2 model", options: [...provider-filtered...] },
 ])
 ```
 
-Paired slots (Skeptic N + Advocate N) asked together. Provider filtering: no two slots in same role share a provider.
+Paired slots (Skeptic N + Advocate N) asked together. Advocate options filtered to exclude Skeptic providers; Skeptic slots always have all options.
 
 After all Skeptic and Advocate slots, ask for Judge model separately (no provider constraints).
 
