@@ -20,7 +20,7 @@ All state is persisted in session database in the `session_store` (SQLite). All 
 <instructions>
 Collect configuration in order. Skip any field already provided in the prompt. Gate to single git call: `git rev-parse --abbrev-ref HEAD` (Phase 2 only).
 Phase order is strict; Phase 4a depends on Phase 4.
-[See quick-start examples](../references/review-tribunal-quick-start.md)
+[See invocation examples](../references/review-tribunal-invocation-examples.md)
 </instructions>
 
 **Collect configuration:**
