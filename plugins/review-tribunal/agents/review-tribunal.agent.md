@@ -83,10 +83,10 @@ Validation: Both Anthropic providers. INVALID.
 
 Re-prompt message:
 "Skeptic 1 and Skeptic 2 both use Anthropic models. Each Skeptic slot must use a different provider.
-Please select a different provider for Skeptic 2 — choose from OpenAI (gpt-5.4, gpt-5.3-codex) or Google (gemini-2.5, gemini-3-flash)."
+Please select a different provider for Skeptic 2."
 
 ask_user([
-  { question: "Skeptic 2 model (conflict)", options: ["gpt-5.4", "gpt-5.3-codex", "gemini-2.5", "gemini-3-flash"] }
+  { question: "Skeptic 2 model (conflict)", options: [...provider-filtered...] }
 ])
 ```
 
