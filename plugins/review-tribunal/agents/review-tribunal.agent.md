@@ -103,7 +103,7 @@ SELECT review_id FROM review_runs WHERE review_id = ?;
 
 If exists, auto-suffix (`-2`, `-3`...) until unique.
 
-> **SQL safety rule:** All SQL statements in this prompt use `?` placeholders. Always bind values as parameters — never interpolate strings directly into SQL. This applies to every INSERT, UPDATE, and SELECT below.
+> **SQL safety:** See [sql-bindings-reference.md](../references/sql-bindings-reference.md) for binding patterns and examples.
 
 ---
 
@@ -191,9 +191,6 @@ INSERT INTO review_runs (
     tribunal_size, debate_rounds,
     skeptic_models, advocate_models, judge_model, status
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running');
--- bind: [review_id, goal, diff_source, diff_path, index_path, files_changed,
---        tribunal_size, debate_rounds,
---        skeptic_models_json, advocate_models_json, judge_model]
 ```
 
 INSERT transcript header:
@@ -269,30 +266,15 @@ INSERT each Skeptic's raw JSON output as it completes:
 ```sql
 INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
 VALUES (?, ?, ?, ?, ?);
--- For skeptic instance n (e.g., n=1):
--- bind: [review_id, round, 'skeptic_1', skeptic_models[0], output_json]
--- Note: resolve skeptic_models[n] to the actual model string before binding (e.g., "claude-sonnet-4.6")
 ```
 
 After all Skeptics complete, collect all `unreadable[]` entries across every Skeptic output.
-Deduplicate by path. Store as `{unreadable_files}` for use in Step 3 (checkpoint display)
-and Judge dispatch (Phase 3). Unreadable files remain consistent across all rounds (once a file 
-is marked unreadable, it stays unreadable). If `{unreadable_files}` is non-empty, pass it to the Judge
-as an additional variable so it can treat unreadable files as Gaps.
+Deduplicate by path and store as `{unreadable_files}` for checkpoint display and Judge dispatch. 
+Unreadable files persist across all rounds — once marked unreadable, they remain so.
 
-**Persistence:** Store unreadable files in review_runs table as JSON:
-```sql
-UPDATE review_runs SET unreadable_files_json = ? WHERE review_id = ?;
--- bind: [json_array(unreadable_files), review_id]
-```
-
-**Retrieval:** On subsequent rounds, reload unreadable files:
-```sql
-SELECT unreadable_files_json FROM review_runs WHERE review_id = ?;
--- bind: [review_id]
-```
-
-Parse the JSON array to restore `{unreadable_files}` variable.
+**Persistence:** On first round, store unreadable files in `review_runs.unreadable_files_json`. 
+On subsequent rounds, retrieve from `review_runs` to restore `{unreadable_files}` variable.
+Pass to Judge so it can treat them as Gaps.
 
 ### Phase 2 — Advocates (parallel)
 
@@ -318,19 +300,16 @@ INSERT each Advocate's raw JSON output as it completes:
 ```sql
 INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
 VALUES (?, ?, ?, ?, ?);
--- For advocate instance n (e.g., n=1):
--- bind: [review_id, round, 'advocate_1', advocate_models[0], output_json]
--- Note: resolve advocate_models[n] to the actual model string before binding (e.g., "gpt-5.4")
 ```
 
 ### Phase 3 — Judge
 
 Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
 
-Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture across all Skeptic/Advocate pairs.
+Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture across all Skeptic/Advocate pairs. The Judge also computes and returns aggregates in a `metadata` key.
 
 The Judge returns a JSON object. Parse it deterministically. If the Judge's output is not
-valid JSON, apply Rule 13.
+valid JSON, apply Rule 13. Extract `{judge_metadata}` from the Judge's return for use in final verdict display.
 
 Confirmed findings carry `location` (primary) and `additional_locations[]` (any further
 sites where the defect manifests or must be fixed). Both are used when persisting findings
@@ -345,25 +324,9 @@ VALUES (?, ?, 'judge', ?, ?);
 
 ### Striking
 
-Parse `verdict.struck` from the Judge's JSON. For each entry:
+Parse `verdict.struck` from the Judge's JSON. For each struck entry, mark the transcript entry and persist a struck finding with issue but no location (since struck findings are factually incorrect). 
 
-```sql
-UPDATE review_transcript_entries
-SET status = 'struck', struck_reason = ?
-WHERE id = ?;
--- bind: [struck[i].reason, struck[i].entry_id]
-```
-
-INSERT a struck finding per entry:
-```sql
-INSERT INTO review_findings (review_id, round, finding_n, verdict, issue, location)
-VALUES (?, ?, ?, 'Struck', ?, NULL);
--- bind: [review_id, round, n, struck[i].issue]
--- location is NULL for struck entries — the finding was factually wrong so no valid location is recorded
-```
-
-Struck entries remain in the DB but are filtered out. In subsequent rounds, subagents
-retrieve only `status = 'active'` entries.
+In subsequent rounds, subagents retrieve only `status = 'active'` transcript entries, naturally filtering out struck findings.
 
 ---
 
@@ -462,45 +425,21 @@ If "Stop": proceed to Step 4.
 
 ## Step 4 — Final Verdict
 
-Determine final status: set to `'confirmed'` if any round produced `confirmed_n > 0` or
-`flagged_n > 0` in `review_checks`; otherwise set to `'clean'`.
+Extract final aggregates from Judge's `metadata`:
+- `{total_confirmed_n}` = `judge_metadata.total_confirmed_n`
+- `{total_defended_n}` = `judge_metadata.total_defended_n`
+- `{total_flagged_n}` = `judge_metadata.total_flagged_n`
+- `{total_gap_n}` = `judge_metadata.total_gap_n`
+- `{total_diagnostic_n}` = `judge_metadata.total_diagnostic_n`
+- `{final_confidence}` = `judge_metadata.final_confidence`
+- `{total_rounds}` = highest round number from the debate loop
+
+Determine final status: set to `'confirmed'` if `total_confirmed_n > 0` or `total_flagged_n > 0`; otherwise set to `'clean'`.
 
 UPDATE run status:
 ```sql
 UPDATE review_runs SET status = ? WHERE review_id = ?;
--- bind: [status, review_id]
 ```
-
-### Compute aggregates for final output
-
-Query all findings across all rounds to compute totals:
-
-```sql
-SELECT 
-  SUM(CASE WHEN verdict = 'Confirmed' THEN 1 ELSE 0 END) as total_confirmed_n,
-  SUM(CASE WHEN verdict = 'Defended' THEN 1 ELSE 0 END) as total_defended_n,
-  SUM(CASE WHEN verdict = 'Flagged' THEN 1 ELSE 0 END) as total_flagged_n,
-  SUM(CASE WHEN verdict = 'Gap' THEN 1 ELSE 0 END) as total_gap_n
-FROM review_findings WHERE review_id = ?;
--- bind: [review_id]
-```
-
-Query pre-confirmed diagnostic issues:
-
-```sql
-SELECT COUNT(*) as total_diagnostic_n FROM lsp_diagnostics WHERE review_id = ?;
--- bind: [review_id]
-```
-
-Compute final confidence (average of all round confidences):
-
-```sql
-SELECT AVG(CAST(confidence AS FLOAT)) as final_confidence
-FROM review_checks WHERE review_id = ? AND check_name = 'judge-verdict';
--- bind: [review_id]
-```
-
-Set `{total_rounds}` from the highest round number found in review_checks.
 
 ### Fix prompt generation
 

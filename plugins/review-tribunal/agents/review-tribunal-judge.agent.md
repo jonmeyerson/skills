@@ -162,6 +162,35 @@ Confidence:
 </behaviour>
 
 <output_format>
+**Before returning verdict,** compute final aggregates and store in your return object:
+
+1. **Round aggregates** (from your verdict counts):
+   - `confirmed_n` = count of confirmed findings in this verdict
+   - `defended_n` = count of defended findings in this verdict
+   - `flagged_n` = count of flagged findings in this verdict
+   - `gap_n` = count of gaps in this verdict
+   - `struck_n` = count of struck findings in this verdict
+
+2. **Cross-round aggregates** (query database to sum across all prior rounds + this round):
+   ```sql
+   SELECT 
+     SUM(CASE WHEN verdict = 'Confirmed' THEN 1 ELSE 0 END) as total_confirmed_n,
+     SUM(CASE WHEN verdict = 'Defended' THEN 1 ELSE 0 END) as total_defended_n,
+     SUM(CASE WHEN verdict = 'Flagged' THEN 1 ELSE 0 END) as total_flagged_n,
+     SUM(CASE WHEN verdict = 'Gap' THEN 1 ELSE 0 END) as total_gap_n
+   FROM review_findings WHERE review_id = ?;
+   ```
+   Then add the above `confirmed_n`, `defended_n`, `flagged_n`, `gap_n` from your current verdict.
+
+3. **Diagnostic and confidence aggregates**:
+   ```sql
+   SELECT COUNT(*) as total_diagnostic_n FROM lsp_diagnostics WHERE review_id = ?;
+   SELECT AVG(CAST(confidence AS FLOAT)) as final_confidence FROM review_checks 
+     WHERE review_id = ? AND check_name = 'judge-verdict';
+   ```
+
+Include these in your return JSON under `metadata` key.
+
 Reason in `<scratchpad>` tags first. Then return a single JSON object — no preamble,
 no markdown fences, no text before or after the JSON.
 
@@ -170,6 +199,18 @@ no markdown fences, no text before or after the JSON.
   "round": <integer>,
   "tribunal_size": <integer>,
   "confidence": "<High | Medium | Low>",
+  "metadata": {
+    "round_confirmed_n": <integer — count of confirmed in this round>,
+    "round_defended_n": <integer — count of defended in this round>,
+    "round_flagged_n": <integer — count of flagged in this round>,
+    "round_gap_n": <integer — count of gaps in this round>,
+    "total_confirmed_n": <integer — cumulative across all rounds>,
+    "total_defended_n": <integer — cumulative across all rounds>,
+    "total_flagged_n": <integer — cumulative across all rounds>,
+    "total_gap_n": <integer — cumulative across all rounds>,
+    "total_diagnostic_n": <integer — count of lsp_diagnostics>,
+    "final_confidence": <float — average confidence across all judge verdicts>
+  },
   "confirmed": [
     {
       "n": <integer, 1-based within this section>,
@@ -231,6 +272,18 @@ no markdown fences, no text before or after the JSON.
   "round": 1,
   "tribunal_size": 2,
   "confidence": "Medium",
+  "metadata": {
+    "round_confirmed_n": 1,
+    "round_defended_n": 1,
+    "round_flagged_n": 1,
+    "round_gap_n": 1,
+    "total_confirmed_n": 1,
+    "total_defended_n": 1,
+    "total_flagged_n": 1,
+    "total_gap_n": 1,
+    "total_diagnostic_n": 0,
+    "final_confidence": 0.6
+  },
   "confirmed": [
     {
       "n": 1,
