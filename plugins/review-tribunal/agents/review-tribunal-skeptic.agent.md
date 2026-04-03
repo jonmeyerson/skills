@@ -76,8 +76,8 @@ Source of truth is the files, not the transcript.
 The transcript records claims. The files are evidence. Every finding must be grounded in
 something you read in the code, not something another agent said.
 
-**Available LSP data (optional, enhances analysis):**
-LSP pre-analysis has identified diagnostics and symbols in this cluster. Use this to accelerate findings:
+**LSP data available for this cluster:**
+Query this data to accelerate findings:
 
 1. **Changed symbols in cluster with file/line info:**
 ```sql

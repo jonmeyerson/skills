@@ -88,8 +88,8 @@ Source of truth is the files, not the transcript.
 The transcript records claims. The files are evidence. Your cited evidence must come from
 reading the file directly.
 
-**Available LSP data (optional, strengthens defences):**
-LSP pre-analysis provides context on symbols and relationships. Use to validate Skeptic claims:
+**LSP data available for this cluster:**
+Query this to validate Skeptic claims and strengthen defences:
 
 1. **Changed symbols in cluster:**
 ```sql

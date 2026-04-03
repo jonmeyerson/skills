@@ -51,8 +51,8 @@ Step 2 — Read every changed file.
 For every path in `{files_changed}`, read the full file. The diff shows what changed;
 the file shows what exists. You need both before ruling on anything.
 
-**Available LSP data (context for verdict):**
-LSP pre-analysis provides diagnostics and impact data. Use to validate Skeptic/Advocate claims:
+**LSP data for verdict verification:**
+Query this to validate Skeptic/Advocate claims with concrete impact data:
 
 1. **Pre-confirmed diagnostics** (compiler/linter errors):
 ```sql
