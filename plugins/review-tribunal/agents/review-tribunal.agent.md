@@ -272,9 +272,17 @@ After all Skeptics complete, collect all `unreadable[]` entries across every Ske
 Deduplicate by path and store as `{unreadable_files}` for checkpoint display and Judge dispatch. 
 Unreadable files persist across all rounds — once marked unreadable, they remain so.
 
-**Persistence:** On first round, store unreadable files in `review_runs.unreadable_files_json`. 
-On subsequent rounds, retrieve from `review_runs` to restore `{unreadable_files}` variable.
-Pass to Judge so it can treat them as Gaps.
+**First round — store unreadable files:**
+```sql
+UPDATE review_runs SET unreadable_files_json = ? WHERE review_id = ?;
+```
+
+**Subsequent rounds — retrieve stored files:**
+```sql
+SELECT unreadable_files_json FROM review_runs WHERE review_id = ?;
+```
+
+Parse JSON array to restore `{unreadable_files}` and pass to Judge.
 
 ### Phase 2 — Advocates (parallel)
 
@@ -324,7 +332,13 @@ VALUES (?, ?, 'judge', ?, ?);
 
 ### Striking
 
-Parse `verdict.struck` from the Judge's JSON. For each struck entry, mark the transcript entry and persist a struck finding with issue but no location (since struck findings are factually incorrect). 
+Parse `verdict.struck` from the Judge's JSON. For each entry, update transcript and persist finding:
+
+```sql
+UPDATE review_transcript_entries SET status = 'struck', struck_reason = ? WHERE id = ?;
+INSERT INTO review_findings (review_id, round, finding_n, verdict, issue, location)
+VALUES (?, ?, ?, 'Struck', ?, NULL);
+```
 
 In subsequent rounds, subagents retrieve only `status = 'active'` transcript entries, naturally filtering out struck findings.
 
