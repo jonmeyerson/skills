@@ -46,49 +46,11 @@ First, assign models to all slots (Skeptic, Advocate, Judge):
 
 **Phase 4a — Model assignment:**
 
-Models available:
-- Anthropic: `claude-sonnet-4.6` · `claude-haiku-4.5`
-- OpenAI: `gpt-5.4` · `gpt-5.3-codex`
-- Google: `gemini-2.5` · `gemini-3-flash`
+Models available: Anthropic (`claude-sonnet-4.6`, `claude-haiku-4.5`), OpenAI (`gpt-5.4`, `gpt-5.3-codex`), Google (`gemini-2.5`, `gemini-3-flash`).
 
-Ask Skeptic and Advocate slots in paired calls:
+Ask Skeptic and Advocate slots in paired `ask_user` calls. No two slots in the same role may share a provider. After all Skeptic/Advocate slots, ask Judge (no provider constraints).
 
-```
-ask_user([
-  { question: "Skeptic 1 model", options: [...] },
-  { question: "Advocate 1 model", options: [...] },
-])
-
-ask_user([
-  { question: "Skeptic 2 model", options: [...provider-filtered...] },
-  { question: "Advocate 2 model", options: [...provider-filtered...] },
-])
-```
-
-Paired slots (Skeptic N + Advocate N) asked together. Provider filtering: no two slots in same role share a provider.
-
-After all Skeptic and Advocate slots, ask for Judge model separately (no provider constraints).
-
-**Provider uniqueness:** No two slots within the same role (Skeptics, Advocates) may
-share a provider. Slots across different roles may share a provider.
-If the user's selections violate this rule, do not silently accept them — re-prompt only
-the conflicting slot(s) in a new `ask_user` call, and explain the conflict. Keep
-re-prompting until every slot in each role has a distinct provider. Do not proceed until
-all selections are valid.
-
-**Re-prompt Example:**
-```
-User selected: Skeptic 1 = claude-sonnet-4.6, Skeptic 2 = claude-haiku-4.5 ✓
-Validation: Both Anthropic providers. INVALID.
-
-Re-prompt message:
-"Skeptic 1 and Skeptic 2 both use Anthropic models. Each Skeptic slot must use a different provider.
-Please select a different provider for Skeptic 2."
-
-ask_user([
-  { question: "Skeptic 2 model (conflict)", options: [...provider-filtered...] }
-])
-```
+If user violates provider uniqueness within a role, re-prompt only the conflicting slot(s) with filtered options until valid.
 
 ---
 
@@ -103,7 +65,7 @@ SELECT review_id FROM review_runs WHERE review_id = ?;
 
 If exists, auto-suffix (`-2`, `-3`...) until unique.
 
-> **SQL safety rule:** All SQL statements in this prompt use `?` placeholders. Always bind values as parameters — never interpolate strings directly into SQL. This applies to every INSERT, UPDATE, and SELECT below.
+> **SQL safety:** See [sql-bindings-reference.md](../references/sql-bindings-reference.md) for binding patterns and examples.
 
 ---
 
@@ -113,33 +75,36 @@ Load [review-tribunal-schema.md](../references/review-tribunal-schema.md) and ex
 
 ---
 
+## Variable Definitions
+
+After collecting configuration in Step 0, define these variables for dispatch:
+
+- `{goal}` — the user-provided goal (from Step 0, question 1)
+- `{overall_goal}` — alias for `{goal}` (used in dispatch briefs; set `overall_goal = goal`)
+- `{subtask_goals}` — file → goal mapping (user-provided or default to `goal` for all files)
+- `{files_changed}` — newline-separated list of changed file paths (from ReviewPatch.ps1)
+- `{diff_path}` — path to unified diff file
+- `{index_path}` — path to diff index file
+- `{review_id}` — unique slug derived from `goal`
+- `{tribunal_size}` — number of skeptic/advocate pairs (1, 2, or 3)
+- `{debate_rounds}` — starting number of rounds
+- `{skeptic_models}` — array of model names assigned to skeptic slots
+- `{advocate_models}` — array of model names assigned to advocate slots
+- `{judge_model}` — model name assigned to judge
+
+---
+
 ## Step 1 — Diff Generation
 
 All review files are written to `{session_store}/files/`.
 
-Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) to generate the patch and the changed-file list.
-The `-OutputPath` must be constructed by the orchestrator before invoking the script.
+Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) with:
+- **Branch mode**: `-Mode branch -Base {base} -Head {head}`
+- **Uncommitted mode**: `-Mode uncommitted -Branch {branch}`
 
-**Mode: `branch:<base>..<head>`**
-```powershell
-$files_changed = & ReviewPatch.ps1 `
-    -Mode       branch `
-    -OutputPath "{session_store}/files/review-{review_id}.patch" `
-    -Base       {base} `
-    -Head       {head}
-```
+Always set `-OutputPath "{session_store}/files/review-{review_id}.patch"`.
 
-**Mode: `uncommitted:<branch>`**
-```powershell
-$files_changed = & ReviewPatch.ps1 `
-    -Mode       uncommitted `
-    -OutputPath "{session_store}/files/review-{review_id}.patch" `
-    -Branch     {branch}
-```
-
-The script writes the patch to `{OutputPath}` and returns the list of changed file
-paths to stdout (newline-separated). Capture stdout as `{files_changed}`.
-If the script exits non-zero, apply Rule 13 (fail explicitly).
+Capture stdout as `{files_changed}` (newline-separated file paths). If non-zero exit, apply Rule 13.
 
 If `{files_changed}` is empty: output `No changes detected between the specified sources.` and stop.
 
@@ -172,9 +137,6 @@ INSERT INTO review_runs (
     tribunal_size, debate_rounds,
     skeptic_models, advocate_models, judge_model, status
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running');
--- bind: [review_id, goal, diff_source, diff_path, index_path, files_changed,
---        tribunal_size, debate_rounds,
---        skeptic_models_json, advocate_models_json, judge_model]
 ```
 
 INSERT transcript header:
@@ -185,64 +147,75 @@ VALUES (?, 0, 'orchestrator', 'n/a', ?);
 --        'REVIEW TRIBUNAL | Diff: {diff_path} | Goal: {goal} | review_id: {review_id} | Size: {tribunal_size} | Starting rounds: {debate_rounds}']
 ```
 
-Build `{subtask_goals}`: map every file in `{files_changed}` to `{goal}` unless the caller
-provided an explicit `file → goal` mapping. If the caller provides an explicit mapping, it
-must be a JSON object with file paths as keys and goal strings as values:
+**Build `{subtask_goals}`:** For each file in `{files_changed}`, map to a specific goal. 
+- If caller provides explicit JSON mapping (`{file_path: goal_string}`), use it per file.
+- Any file not in explicit mapping defaults to `{goal}`.
+- If caller mapping is invalid JSON or contains unknown file paths, report error and stop.
 
-```json
-{
-  "src/Services/AuthService.cs": "Add error handling to the Login method",
-  "tests/AuthServiceTests.cs": "Add unit tests covering Login error cases"
-}
+This allows fine-grained review targets: test files get "write tests", service files get "error handling", etc.
+
+### LSP Scoping (Phases A–E)
+
+Always execute the full LSP scoping workflow before debate rounds. Use pipelined parallelization (maintain concurrent pool, start next task when slot opens).
+
+**Phase A — Discover and start LSP servers**
+
+Use `lsp-config` to find language servers for file extensions in `{files_changed}`. Start each. Files without LSP coverage go to `{unscoped_files}` (passed as full context to all dispatches). If unscoped files exist, ask user whether to proceed or install additional servers.
+
+**Phase B — Collect diagnostics (pre-confirmed issues)**
+
+Wait for all LSP servers to report ready. Collect all diagnostics (errors, warnings, type mismatches) per LSP-covered file. Store in SQLite:
+```sql
+INSERT INTO lsp_diagnostics (review_id, file_path, line, column, severity, message, diagnostic_code)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 ```
 
-If the provided mapping is not valid JSON or contains keys not present in `{files_changed}`,
-report the error to the user and stop. Any file in `{files_changed}` not covered by the
-explicit mapping falls back to `{goal}`.
+Pre-confirmed issues skip debate loop. Display in final verdict under DIAGNOSTIC ISSUES.
 
-### Phase — LSP Scoping
+**Phase C — Extract changed symbols (pipelined, pool 5–10)**
 
-Measure the diff line count:
-
-```powershell
-(Get-Content "{diff_path}").Count
+For each LSP-covered file: issue `documentSymbol` request. Parse response → extract (symbol_name, symbol_type, namespace, line_start, line_end, file_path). Cross-reference with diff hunks; discard unchanged. Deduplicate by `(symbol_name, symbol_type, namespace)` → store primary file:
+```sql
+INSERT INTO lsp_symbols (review_id, file_path, symbol_name, symbol_type, namespace, line_start, line_end)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 ```
 
-If under 5000: set `{dispatch_mode}` = `full` and proceed to Step 2.
+**Phase D — Build blast radius (pipelined, pool 10–20)**
 
-If 5000 or above: set `{dispatch_mode}` = `scoped` and execute the [full LSP scoping workflow (Phases A–E)](../references/review-tribunal-lsp-scoping.md).
+For each symbol, parallel issue 4 LSP calls: incomingCalls (up_to_2_hops), outgoingCalls, supertypes, subtypes. Collect results, extract (target_symbol, target_file, distance_hop, call_type). Exclude generated files. Deduplicate by `(target_symbol, target_file, call_type)`:
+```sql
+INSERT INTO lsp_blast_radius (review_id, symbol_id, call_type, target_symbol, target_file, distance, namespace)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+```
 
-Run `{debate_rounds}` rounds. Each round follows this exact sequence.
+**Phase E — Cluster into manageable chunks**
+
+Compute "reach" per symbol (files + blast radius). Group into clusters: target 6000-line budget per cluster, split at file boundaries. Assign cluster_id and store:
+```sql
+INSERT INTO review_clusters (review_id, cluster_id, symbol_id)
+VALUES (?, ?, ?);
+```
+
+After Phase E, run `{debate_rounds}` rounds. Each round follows this exact sequence.
 
 ---
 
 ## Step 2 — Debate Loop
 
-### Pre-dispatch assertion
-
-Before invoking any subagent, verify that model assignments are unique within each role:
-- No two entries in `skeptic_models` share the same provider.
-- No two entries in `advocate_models` share the same provider.
-
-If either check fails, report the conflict to the user (listing the duplicate slots and
-providers) and stop. Do not dispatch any subagent until this passes.
-
 ### Phase 1 — Skeptics (parallel)
 
-**If `{dispatch_mode}` = `full`:** Invoke `{tribunal_size}` instances of
-`@review-tribunal-skeptic` simultaneously, one per slot. Each instance receives:
-`{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{diff_path}`, `{index_path}`,
-`{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
+Read all clusters from `review_clusters` table. Query to identify which cluster each symbol belongs to:
+```sql
+SELECT DISTINCT c.cluster_id FROM review_clusters 
+WHERE review_id = ? ORDER BY c.cluster_id;
+-- bind: [review_id]
+```
 
-**If `{dispatch_mode}` = `scoped`:** Invoke one `@review-tribunal-skeptic` instance per
-cluster from `{scope_path}`, up to `{tribunal_size}` clusters in parallel. If there are
-more clusters than Skeptic slots, queue remaining clusters and process in batches. Each
-instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster}`, `{scope_path}`,
-`{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
-Unsupported and excluded files listed in `{scope_path}` are appended as full-file context.
+Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
 
-Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from
-narrative text. If a Skeptic's output is not valid JSON, apply Rule 13 (fail explicitly).
+Skeptics query SQLite for cluster details, symbols, and blast radius.
+
+Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from narrative text. If invalid JSON, apply Rule 13 (fail explicitly).
 
 Each finding in `findings[]` carries a `locations[]` array — one entry per file location
 that is part of the finding. Most findings have one entry; multi-location findings have
@@ -252,30 +225,39 @@ INSERT each Skeptic's raw JSON output as it completes:
 ```sql
 INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
 VALUES (?, ?, ?, ?, ?);
--- bind: [review_id, round, 'skeptic_{n}', skeptic_models[n], output_json]
 ```
 
 After all Skeptics complete, collect all `unreadable[]` entries across every Skeptic output.
-Deduplicate by path. Store as `{unreadable_files}` for use in Step 3 (checkpoint display)
-and Judge dispatch (Phase 3). If `{unreadable_files}` is non-empty, pass it to the Judge
-as an additional variable so it can treat unreadable files as Gaps.
+Deduplicate by path and store as `{unreadable_files}` for checkpoint display and Judge dispatch. 
+Unreadable files persist across all rounds — once marked unreadable, they remain so.
+
+**First round — store unreadable files:**
+```sql
+UPDATE review_runs SET unreadable_files_json = ? WHERE review_id = ?;
+```
+
+**Subsequent rounds — retrieve stored files:**
+```sql
+SELECT unreadable_files_json FROM review_runs WHERE review_id = ?;
+```
+
+Parse JSON array to restore `{unreadable_files}` and pass to Judge.
 
 ### Phase 2 — Advocates (parallel)
 
-Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of
-`@review-tribunal-advocate` simultaneously. Each instance must be invoked with its assigned
-model (`advocate_models[n]`) and passed the following variables: `{overall_goal}`,
-`{subtask_goals}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
+Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of `@review-tribunal-advocate` simultaneously. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
 
-**If `{dispatch_mode}` = `full`:** also pass `{files_changed}`, `{diff_path}`, `{index_path}`.
-**If `{dispatch_mode}` = `scoped`:** also pass `{cluster}`, `{scope_path}`, `{diff_path}`, `{index_path}` matching the
-cluster the paired Skeptic reviewed. In batched mode (more clusters than Skeptic slots),
-each Advocate instance receives the combined findings from **all Skeptics in the current
-batch** — not only the findings from its paired Skeptic. Pass all Skeptic outputs for the
-batch in each Advocate's dispatch brief.
+In batched mode, each Advocate receives combined findings from **all Skeptics in the current batch**. Advocates retrieve skeptic findings via SQL query:
+```sql
+SELECT id, agent, model, round, content FROM review_transcript_entries
+WHERE review_id = ? AND agent LIKE 'skeptic_%' AND round = ? AND status = 'active'
+ORDER BY id;
+-- bind: [review_id, round]
+```
 
-Each Advocate returns a JSON object. Parse it deterministically. If an Advocate's output
-is not valid JSON, apply Rule 13.
+Advocates then query SQLite for cluster details and blast radius to formulate responses.
+
+Each Advocate returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13.
 
 Each response in `responses[]` carries a `reads[]` array — one entry per location the
 Advocate verified. A response covering a multi-location finding will have multiple entries.
@@ -284,21 +266,15 @@ INSERT each Advocate's raw JSON output as it completes:
 ```sql
 INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
 VALUES (?, ?, ?, ?, ?);
--- bind: [review_id, round, 'advocate_{n}', advocate_models[n], output_json]
 ```
 
 ### Phase 3 — Judge
 
-Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge`
-using `{judge_model}`. Pass the following variables: `{overall_goal}`, `{subtask_goals}`,
-`{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty array).
+Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
 
-**If `{dispatch_mode}` = `full`:** also pass `{files_changed}`, `{diff_path}`, `{index_path}`.
-**If `{dispatch_mode}` = `scoped`:** also pass `{scope_path}`, `{diff_path}`, `{index_path}` and all cluster objects
-so the Judge has the full picture across all Skeptic/Advocate pairs.
+Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture. Judge also computes and returns aggregates in a `metadata` key.
 
-The Judge returns a JSON object. Parse it deterministically. If the Judge's output is not
-valid JSON, apply Rule 13.
+The Judge returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13. Extract `{judge_metadata}` from the return.
 
 Confirmed findings carry `location` (primary) and `additional_locations[]` (any further
 sites where the defect manifests or must be fixed). Both are used when persisting findings
@@ -313,25 +289,15 @@ VALUES (?, ?, 'judge', ?, ?);
 
 ### Striking
 
-Parse `verdict.struck` from the Judge's JSON. For each entry:
+Parse `verdict.struck` from the Judge's JSON. For each entry, update transcript and persist finding:
 
 ```sql
-UPDATE review_transcript_entries
-SET status = 'struck', struck_reason = ?
-WHERE id = ?;
--- bind: [struck[i].reason, struck[i].entry_id]
-```
-
-INSERT a struck finding per entry:
-```sql
+UPDATE review_transcript_entries SET status = 'struck', struck_reason = ? WHERE id = ?;
 INSERT INTO review_findings (review_id, round, finding_n, verdict, issue, location)
 VALUES (?, ?, ?, 'Struck', ?, NULL);
--- bind: [review_id, round, n, struck[i].issue]
--- location is NULL for struck entries — the finding was factually wrong so no valid location is recorded
 ```
 
-Struck entries remain in the DB but are filtered out. In subsequent rounds, subagents
-retrieve only `status = 'active'` entries.
+In subsequent rounds, subagents retrieve only `status = 'active'` transcript entries, naturally filtering out struck findings.
 
 ---
 
@@ -381,10 +347,26 @@ VALUES (?, 'judge-verdict', ?, ?, ?, ?, ?, ?);
 Use the interactive input tool with:
 
 - **Message:**
+
+Query pre-confirmed diagnostic issues before displaying verdict:
+```sql
+SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
+WHERE review_id = ? ORDER BY file_path, line;
+-- bind: [review_id]
+```
+
+Display checkpoint:
 ```
 ROUND {round} VERDICT | Confidence: {confidence}
 
 Confirmed: {confirmed_n}  Defended: {defended_n}  Flagged: {flagged_n}
+
+{If diagnostic_issues exist:
+DIAGNOSTIC ISSUES (Pre-confirmed — skipped debate):
+{For each diagnostic:
+  - {file_path}:{line} ({severity}): {message}}
+
+{If none: omit this section}
 
 {For each confirmed finding:
   - issue
@@ -400,7 +382,7 @@ Confirmed: {confirmed_n}  Defended: {defended_n}  Flagged: {flagged_n}
 {If unreadable_files is non-empty:
 ⚠️  Unreadable files (excluded from review):
   - {each path — reason}}
-{If none: "No confirmed or flagged issues this round."}
+{If no confirmed, flagged, or diagnostics: "No issues this round."}
 ```
 
 - **Radio — Continue?**
@@ -414,48 +396,21 @@ If "Stop": proceed to Step 4.
 
 ## Step 4 — Final Verdict
 
-Determine final status: set to `'confirmed'` if any round produced `confirmed_n > 0` or
-`flagged_n > 0` in `review_checks`; otherwise set to `'clean'`.
+Extract final aggregates from Judge's `metadata`:
+- `{total_confirmed_n}` = `judge_metadata.total_confirmed_n`
+- `{total_defended_n}` = `judge_metadata.total_defended_n`
+- `{total_flagged_n}` = `judge_metadata.total_flagged_n`
+- `{total_gap_n}` = `judge_metadata.total_gap_n`
+- `{total_diagnostic_n}` = `judge_metadata.total_diagnostic_n`
+- `{final_confidence}` = `judge_metadata.final_confidence`
+- `{total_rounds}` = highest round number from the debate loop
+
+Determine final status: set to `'confirmed'` if `total_confirmed_n > 0` or `total_flagged_n > 0`; otherwise set to `'clean'`.
 
 UPDATE run status:
 ```sql
 UPDATE review_runs SET status = ? WHERE review_id = ?;
--- bind: [status, review_id]
 ```
-
-### Fix prompt generation
-
-<instructions>
-For every confirmed finding, emit a `<fix_prompt issue="round{round}-{n}">` tag immediately after its
-entry in the CONFIRMED ISSUES block. Write the fix prompt as a direct imperative
-instruction. Be specific: name the file, the line, and exactly what to change. If the fix
-spans multiple locations, address each one in order. Do not explain why — only what to do.
-</instructions>
-
-<template>
-<fix_prompt issue="round{round}-{n}">
-{issue}
-
-{For each location — primary first, then additional:}
-File: {file}, line {lines}
-Current code: {what the code does now at this location — from judge_read}
-Change: {exact instruction for what to do here}
-</fix_prompt>
-</template>
-
-<example>
-<fix_prompt issue="round1-1">
-Login does not handle ITokenProvider.Generate throwing — unhandled exception propagates to the HTTP layer and returns a 500.
-
-File: src/Services/AuthService.cs, line 34
-Current code: `var token = _tokenProvider.Generate(user.Id);` — no try/catch in the enclosing Login method.
-Change: Wrap this call in a try/catch block. On exception, return Result.Failure("token_error") instead of propagating.
-
-File: src/Controllers/AuthController.cs, lines 18–20
-Current code: `var result = await _authService.Login(request);` — result.Token accessed on line 20 with no failure check.
-Change: Check result.IsSuccess before accessing result.Token. Return HTTP 401 if result.IsSuccess is false.
-</fix_prompt>
-</example>
 
 ### Report file
 
@@ -514,14 +469,10 @@ The tool supports the following widget types — compose them to fit the decisio
 | 3 | Dispatch | Every subagent dispatch brief is fully self-contained; subagents start cold |
 | 4 | Configuration | Collect missing config in Step 0 only; never re-ask what user provided |
 | 5 | Provider Uniqueness | No two slots in same role (Skeptic/Advocate) may share provider; re-prompt until valid |
-| 6 | Phase Order | Skeptics → Advocates → Judge; never overlap phases |
+| 6 | Phase Order | Skeptics → Advocates → Judge in strict sequence. Parallelize within phase (not across). Wait for all outputs before moving next phase. |
 | 7 | Parallelism | Skeptics and Advocates run in parallel within their phase; never serialize |
-| 8 | Judge Sequencing | Never dispatch Judge until all Advocate outputs are INSERTed |
-| 9 | Struck Filtering | Subagents retrieve only `status = 'active'` entries in subsequent rounds |
-| 10 | Non-Implementation | Surface confirmed issues and stop; caller owns fixes |
-| 11 | Empty Diff | No changes detected → stop and report cleanly |
-| 12 | Stuck State | If unexpected state arises, report and stop; don't spin |
-| 13 | Failure Mode | Any tool/SQL/git/output failure → report specific failure and stop |
-| 14 | JSON Parsing | Parse JSON deterministically; never infer values from narrative text |
-| 15 | User Input | Always use ask_user; never ask user to run commands |
-| 16 | Sequencing | Each ask_user phase in Step 0 completes before next; never merge
+| 8 | Struck Filtering | Subagents retrieve only `status = 'active'` entries in subsequent rounds |
+| 9 | Failure Mode | Surface findings and stop without fix implementation. Report any tool/SQL/git/output failure with specifics. |
+| 10 | Stuck State | If unexpected state arises, report and stop; don't spin |
+| 11 | JSON Parsing | Parse JSON deterministically; never infer values from narrative text |
+| 12 | User Input | Always use ask_user; never ask user to run commands |

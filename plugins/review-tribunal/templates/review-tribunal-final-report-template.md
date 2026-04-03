@@ -82,7 +82,37 @@ Issues that passed the debate gauntlet:
 - Advocates could not adequately defend
 - Judge ruled them confirmed
 
-Each includes a `<fix_prompt>` tag for automated fixing.
+**Fix Prompt Format:**
+
+For each confirmed issue, emit a `<fix_prompt>` tag immediately after its entry:
+
+```xml
+<fix_prompt issue="round{round}-{n}">
+{issue}
+
+{For each location — primary first, then additional:}
+File: {file}, line {lines}
+Current code: {what the code does now at this location}
+Change: {exact imperative instruction for what to do here}
+</fix_prompt>
+```
+
+Write fix prompts as direct imperatives: be specific with file, line, and exact change. If fix spans multiple locations, address each in order. Explain what to change, not why.
+
+**Example:**
+```xml
+<fix_prompt issue="round1-1">
+Login does not handle ITokenProvider.Generate throwing — unhandled exception propagates to the HTTP layer and returns a 500.
+
+File: src/Services/AuthService.cs, line 34
+Current code: `var token = _tokenProvider.Generate(user.Id);` — no try/catch in the enclosing Login method.
+Change: Wrap this call in a try/catch block. On exception, return Result.Failure("token_error") instead of propagating.
+
+File: src/Controllers/AuthController.cs, lines 18–20
+Current code: `var result = await _authService.Login(request);` — result.Token accessed on line 20 with no failure check.
+Change: Check result.IsSuccess before accessing result.Token. Return HTTP 401 if result.IsSuccess is false.
+</fix_prompt>
+```
 
 ### Flagged for Human
 
