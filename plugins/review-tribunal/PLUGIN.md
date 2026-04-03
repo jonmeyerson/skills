@@ -84,5 +84,4 @@ Slots across roles may share a provider. The Judge has no provider restriction.
 |---|---|
 | 1 | 1 Skeptic, 1 Advocate, 1 Judge |
 | 2 | 2 Skeptics, 2 Advocates, 1 Judge |
-
-Size 3 is defined in the schema but currently disabled.
+| 3 | 3 Skeptics, 3 Advocates, 1 Judge |
