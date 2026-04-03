@@ -204,8 +204,6 @@ explicit mapping falls back to `{goal}`.
 
 Always use LSP scoping for improved accuracy. Execute the [full LSP scoping workflow (Phases A–E)](../references/review-tribunal-lsp-scoping.md).
 
-Set `{dispatch_mode}` = `scoped`.
-
 Run `{debate_rounds}` rounds. Each round follows this exact sequence.
 
 ---
