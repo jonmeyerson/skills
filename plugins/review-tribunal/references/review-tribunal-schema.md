@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS review_runs (
     advocate_models    TEXT NOT NULL,   -- JSON array
     judge_model        TEXT NOT NULL,
     status             TEXT NOT NULL CHECK(status IN ('running', 'confirmed', 'clean')),
+    unreadable_files_json TEXT,         -- JSON array of file paths that could not be read (consistent across rounds)
     ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -46,21 +47,35 @@ CREATE TABLE IF NOT EXISTS review_transcript_entries (
 
 ### review_checks
 
-Aggregated check results by round.
+Per-round aggregated verdict summary from Judge. One row per round per check. Used for:
+- Computing final pass/fail status (passed=1 if no confirmed issues)
+- Aggregating verdict counts across all rounds for final report
+- Historical audit trail of verdict evolution across rounds
 
 ```sql
 CREATE TABLE IF NOT EXISTS review_checks (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     review_id          TEXT    NOT NULL,
-    check_name         TEXT    NOT NULL,
+    check_name         TEXT    NOT NULL,     -- always 'judge-verdict' for review-tribunal
     round              INTEGER NOT NULL DEFAULT 1,
-    confirmed_n        INTEGER,
-    defended_n         INTEGER,
-    flagged_n          INTEGER,
-    confidence         TEXT,
-    passed             INTEGER NOT NULL CHECK(passed IN (0, 1)),
+    confirmed_n        INTEGER,              -- count of confirmed findings this round
+    defended_n         INTEGER,              -- count of defended findings this round
+    flagged_n          INTEGER,              -- count of flagged findings this round
+    confidence         TEXT,                 -- judge's confidence level this round
+    passed             INTEGER NOT NULL CHECK(passed IN (0, 1)),  -- 1 if no confirmed, 0 otherwise
     ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+```
+
+**Query for aggregates across all rounds:**
+```sql
+SELECT 
+  COUNT(*) as total_rounds,
+  SUM(confirmed_n) as total_confirmed,
+  SUM(defended_n) as total_defended,
+  SUM(flagged_n) as total_flagged,
+  AVG(CAST(confidence AS FLOAT)) as avg_confidence
+FROM review_checks WHERE review_id = ? AND check_name = 'judge-verdict';
 ```
 
 ### review_findings

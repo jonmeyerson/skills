@@ -113,6 +113,25 @@ Load [review-tribunal-schema.md](../references/review-tribunal-schema.md) and ex
 
 ---
 
+## Variable Definitions
+
+After collecting configuration in Step 0, define these variables for dispatch:
+
+- `{goal}` — the user-provided goal (from Step 0, question 1)
+- `{overall_goal}` — alias for `{goal}` (used in dispatch briefs; set `overall_goal = goal`)
+- `{subtask_goals}` — file → goal mapping (user-provided or default to `goal` for all files)
+- `{files_changed}` — newline-separated list of changed file paths (from ReviewPatch.ps1)
+- `{diff_path}` — path to unified diff file
+- `{index_path}` — path to diff index file
+- `{review_id}` — unique slug derived from `goal`
+- `{tribunal_size}` — number of skeptic/advocate pairs (1, 2, or 3)
+- `{debate_rounds}` — starting number of rounds
+- `{skeptic_models}` — array of model names assigned to skeptic slots
+- `{advocate_models}` — array of model names assigned to advocate slots
+- `{judge_model}` — model name assigned to judge
+
+---
+
 ## Step 1 — Diff Generation
 
 All review files are written to `{session_store}/files/`.
@@ -235,7 +254,7 @@ WHERE review_id = ? ORDER BY c.cluster_id;
 -- bind: [review_id]
 ```
 
-Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
+Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
 
 Skeptics query SQLite for cluster details, symbols, and blast radius.
 
@@ -250,19 +269,44 @@ INSERT each Skeptic's raw JSON output as it completes:
 ```sql
 INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
 VALUES (?, ?, ?, ?, ?);
--- bind: [review_id, round, 'skeptic_{n}', skeptic_models[n], output_json]
+-- For skeptic instance n (e.g., n=1):
+-- bind: [review_id, round, 'skeptic_1', skeptic_models[0], output_json]
+-- Note: resolve skeptic_models[n] to the actual model string before binding (e.g., "claude-sonnet-4.6")
 ```
 
 After all Skeptics complete, collect all `unreadable[]` entries across every Skeptic output.
 Deduplicate by path. Store as `{unreadable_files}` for use in Step 3 (checkpoint display)
-and Judge dispatch (Phase 3). If `{unreadable_files}` is non-empty, pass it to the Judge
+and Judge dispatch (Phase 3). Unreadable files remain consistent across all rounds (once a file 
+is marked unreadable, it stays unreadable). If `{unreadable_files}` is non-empty, pass it to the Judge
 as an additional variable so it can treat unreadable files as Gaps.
+
+**Persistence:** Store unreadable files in review_runs table as JSON:
+```sql
+UPDATE review_runs SET unreadable_files_json = ? WHERE review_id = ?;
+-- bind: [json_array(unreadable_files), review_id]
+```
+
+**Retrieval:** On subsequent rounds, reload unreadable files:
+```sql
+SELECT unreadable_files_json FROM review_runs WHERE review_id = ?;
+-- bind: [review_id]
+```
+
+Parse the JSON array to restore `{unreadable_files}` variable.
 
 ### Phase 2 — Advocates (parallel)
 
-Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of `@review-tribunal-advocate` simultaneously. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
+Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of `@review-tribunal-advocate` simultaneously. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
 
-In batched mode, each Advocate receives combined findings from **all Skeptics in the current batch**. Advocates query SQLite for cluster details and blast radius.
+In batched mode, each Advocate receives combined findings from **all Skeptics in the current batch**. Advocates retrieve skeptic findings via SQL query:
+```sql
+SELECT id, agent, model, round, content FROM review_transcript_entries
+WHERE review_id = ? AND agent LIKE 'skeptic_%' AND round = ? AND status = 'active'
+ORDER BY id;
+-- bind: [review_id, round]
+```
+
+Advocates then query SQLite for cluster details and blast radius to formulate responses.
 
 Each Advocate returns a JSON object. Parse it deterministically. If an Advocate's output
 is not valid JSON, apply Rule 13.
@@ -274,12 +318,14 @@ INSERT each Advocate's raw JSON output as it completes:
 ```sql
 INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
 VALUES (?, ?, ?, ?, ?);
--- bind: [review_id, round, 'advocate_{n}', advocate_models[n], output_json]
+-- For advocate instance n (e.g., n=1):
+-- bind: [review_id, round, 'advocate_1', advocate_models[0], output_json]
+-- Note: resolve advocate_models[n] to the actual model string before binding (e.g., "gpt-5.4")
 ```
 
 ### Phase 3 — Judge
 
-Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
+Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
 
 Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture across all Skeptic/Advocate pairs.
 
@@ -367,10 +413,26 @@ VALUES (?, 'judge-verdict', ?, ?, ?, ?, ?, ?);
 Use the interactive input tool with:
 
 - **Message:**
+
+Query pre-confirmed diagnostic issues before displaying verdict:
+```sql
+SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
+WHERE review_id = ? ORDER BY file_path, line;
+-- bind: [review_id]
+```
+
+Display checkpoint:
 ```
 ROUND {round} VERDICT | Confidence: {confidence}
 
 Confirmed: {confirmed_n}  Defended: {defended_n}  Flagged: {flagged_n}
+
+{If diagnostic_issues exist:
+DIAGNOSTIC ISSUES (Pre-confirmed — skipped debate):
+{For each diagnostic:
+  - {file_path}:{line} ({severity}): {message}}
+
+{If none: omit this section}
 
 {For each confirmed finding:
   - issue
@@ -386,7 +448,7 @@ Confirmed: {confirmed_n}  Defended: {defended_n}  Flagged: {flagged_n}
 {If unreadable_files is non-empty:
 ⚠️  Unreadable files (excluded from review):
   - {each path — reason}}
-{If none: "No confirmed or flagged issues this round."}
+{If no confirmed, flagged, or diagnostics: "No issues this round."}
 ```
 
 - **Radio — Continue?**
@@ -408,6 +470,37 @@ UPDATE run status:
 UPDATE review_runs SET status = ? WHERE review_id = ?;
 -- bind: [status, review_id]
 ```
+
+### Compute aggregates for final output
+
+Query all findings across all rounds to compute totals:
+
+```sql
+SELECT 
+  SUM(CASE WHEN verdict = 'Confirmed' THEN 1 ELSE 0 END) as total_confirmed_n,
+  SUM(CASE WHEN verdict = 'Defended' THEN 1 ELSE 0 END) as total_defended_n,
+  SUM(CASE WHEN verdict = 'Flagged' THEN 1 ELSE 0 END) as total_flagged_n,
+  SUM(CASE WHEN verdict = 'Gap' THEN 1 ELSE 0 END) as total_gap_n
+FROM review_findings WHERE review_id = ?;
+-- bind: [review_id]
+```
+
+Query pre-confirmed diagnostic issues:
+
+```sql
+SELECT COUNT(*) as total_diagnostic_n FROM lsp_diagnostics WHERE review_id = ?;
+-- bind: [review_id]
+```
+
+Compute final confidence (average of all round confidences):
+
+```sql
+SELECT AVG(CAST(confidence AS FLOAT)) as final_confidence
+FROM review_checks WHERE review_id = ? AND check_name = 'judge-verdict';
+-- bind: [review_id]
+```
+
+Set `{total_rounds}` from the highest round number found in review_checks.
 
 ### Fix prompt generation
 

@@ -31,7 +31,7 @@ transcript. Do not skip this because it feels redundant. Prior rounds are not in
 context; the only way to know what happened is to read.
 
 Step 1 — Read the diff.
-Read `{diff_path}` in full.
+Read `{diff_path}` in full. If empty, return `No changes detected between the specified sources.` and stop.
 
 Use `{index_path}` to locate each changed file's starting line in the patch before reading.
 The index format is one entry per file: `diff --git a/<path> b/<path>  <line_number>`.
