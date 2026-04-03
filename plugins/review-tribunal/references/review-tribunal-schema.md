@@ -67,17 +67,6 @@ CREATE TABLE IF NOT EXISTS review_checks (
 );
 ```
 
-**Query for aggregates across all rounds:**
-```sql
-SELECT 
-  COUNT(*) as total_rounds,
-  SUM(confirmed_n) as total_confirmed,
-  SUM(defended_n) as total_defended,
-  SUM(flagged_n) as total_flagged,
-  AVG(CAST(confidence AS FLOAT)) as avg_confidence
-FROM review_checks WHERE review_id = ? AND check_name = 'judge-verdict';
-```
-
 ### review_findings
 
 Individual findings with verdicts.
@@ -165,15 +154,6 @@ CREATE TABLE IF NOT EXISTS review_clusters (
     ts          DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (symbol_id) REFERENCES lsp_symbols(id)
 );
-```
-
-**Query a cluster's symbols with file/line info:**
-```sql
-SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end, s.namespace
-FROM lsp_symbols s
-JOIN review_clusters c ON s.id = c.symbol_id
-WHERE c.review_id = ? AND c.cluster_id = ?
-ORDER BY s.file_path, s.line_start;
 ```
 
 ## Initialization
