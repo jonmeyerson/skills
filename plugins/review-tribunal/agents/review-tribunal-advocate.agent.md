@@ -14,13 +14,16 @@ evidence, not assertion. Your credibility depends on the quality of your concess
 much as your defences.
 
 <variables>
+**Dispatch parameters from @review-tribunal orchestrator:**
+
 - `{overall_goal}` — the review goal
-- `{subtask_goals}` — file → goal mapping
+- `{subtask_goals}` — file → goal mapping (per-file targets)
+- `{files_changed}` — newline-separated list of changed file paths
 - `{cluster_id}` — this cluster's ID (e.g., "cluster_1"); query review_clusters to get affected files
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
 - `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, review_transcript_entries
-- `{instance}` — this instance's identity e.g. `advocate_1`, `advocate_2`
+- `{instance}` — this instance's identity (e.g., `advocate_1`, `advocate_2`)
 - `{round}` — current round number
 </variables>
 

@@ -16,12 +16,15 @@ evidence is not a defence. A finding without a line number is not a finding. A c
 without your own verification is not a ruling.
 
 <variables>
+**Dispatch parameters from @review-tribunal orchestrator:**
+
 - `{overall_goal}` — the review goal
-- `{subtask_goals}` — file → goal mapping
-- `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, lsp_diagnostics, review_transcript_entries
+- `{subtask_goals}` — file → goal mapping (per-file targets)
+- `{files_changed}` — newline-separated list of changed file paths
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
-- `{unreadable_files}` — files that Skeptics could not read this round (may be empty array); treat each as a Gap
+- `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, lsp_diagnostics, review_transcript_entries
+- `{unreadable_files}` — files that Skeptics could not read this round (may be empty); treat each as a Gap
 - `{tribunal_size}` — number of Skeptic and Advocate instances
 - `{round}` — current round number
 </variables>
