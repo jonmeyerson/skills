@@ -202,15 +202,9 @@ explicit mapping falls back to `{goal}`.
 
 ### Phase — LSP Scoping
 
-Measure the diff line count:
+Always use LSP scoping for improved accuracy. Execute the [full LSP scoping workflow (Phases A–E)](../references/review-tribunal-lsp-scoping.md).
 
-```powershell
-(Get-Content "{diff_path}").Count
-```
-
-If under 5000: set `{dispatch_mode}` = `full` and proceed to Step 2.
-
-If 5000 or above: set `{dispatch_mode}` = `scoped` and execute the [full LSP scoping workflow (Phases A–E)](../references/review-tribunal-lsp-scoping.md).
+Set `{dispatch_mode}` = `scoped`.
 
 Run `{debate_rounds}` rounds. Each round follows this exact sequence.
 
@@ -229,16 +223,11 @@ providers) and stop. Do not dispatch any subagent until this passes.
 
 ### Phase 1 — Skeptics (parallel)
 
-**If `{dispatch_mode}` = `full`:** Invoke `{tribunal_size}` instances of
-`@review-tribunal-skeptic` simultaneously, one per slot. Each instance receives:
-`{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{diff_path}`, `{index_path}`,
-`{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
-
-**If `{dispatch_mode}` = `scoped`:** Invoke one `@review-tribunal-skeptic` instance per
-cluster from `{scope_path}`, up to `{tribunal_size}` clusters in parallel. If there are
-more clusters than Skeptic slots, queue remaining clusters and process in batches. Each
-instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster}`, `{scope_path}`,
-`{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
+Invoke one `@review-tribunal-skeptic` instance per cluster from `{scope_path}`, up to
+`{tribunal_size}` clusters in parallel. If there are more clusters than Skeptic slots,
+queue remaining clusters and process in batches. Each instance receives: `{overall_goal}`,
+`{subtask_goals}`, `{cluster}`, `{scope_path}`, `{diff_path}`, `{index_path}`, `{review_id}`,
+`{instance}` (e.g. `skeptic_1`), `{round}`.
 Unsupported and excluded files listed in `{scope_path}` are appended as full-file context.
 
 Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from
@@ -267,8 +256,7 @@ Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of
 model (`advocate_models[n]`) and passed the following variables: `{overall_goal}`,
 `{subtask_goals}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
 
-**If `{dispatch_mode}` = `full`:** also pass `{files_changed}`, `{diff_path}`, `{index_path}`.
-**If `{dispatch_mode}` = `scoped`:** also pass `{cluster}`, `{scope_path}`, `{diff_path}`, `{index_path}` matching the
+Also pass `{cluster}`, `{scope_path}`, `{diff_path}`, `{index_path}` matching the
 cluster the paired Skeptic reviewed. In batched mode (more clusters than Skeptic slots),
 each Advocate instance receives the combined findings from **all Skeptics in the current
 batch** — not only the findings from its paired Skeptic. Pass all Skeptic outputs for the
@@ -293,8 +281,7 @@ Wait for all Advocates to complete. Invoke a single instance of `@review-tribuna
 using `{judge_model}`. Pass the following variables: `{overall_goal}`, `{subtask_goals}`,
 `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty array).
 
-**If `{dispatch_mode}` = `full`:** also pass `{files_changed}`, `{diff_path}`, `{index_path}`.
-**If `{dispatch_mode}` = `scoped`:** also pass `{scope_path}`, `{diff_path}`, `{index_path}` and all cluster objects
+Also pass `{scope_path}`, `{diff_path}`, `{index_path}` and all cluster objects
 so the Judge has the full picture across all Skeptic/Advocate pairs.
 
 The Judge returns a JSON object. Parse it deterministically. If the Judge's output is not

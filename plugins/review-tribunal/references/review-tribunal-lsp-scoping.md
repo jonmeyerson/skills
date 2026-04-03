@@ -1,6 +1,6 @@
 # LSP Scoping Workflow (Phases A–E)
 
-Executed only when diff line count ≥ 5000 lines (see orchestrator for gate logic).
+Executed for all diffs (improved accuracy for all changes).
 
 **Important:** Start Phase A immediately — LSP server startup can be slow. Beginning discovery now prevents it from blocking subagent dispatch later. Phases B–E depend on LSP being ready, so start the server in Phase A and wait for readiness before issuing any LSP requests.
 
@@ -11,8 +11,6 @@ Executed only when diff line count ≥ 5000 lines (see orchestrator for gate log
 Use `lsp-config` to identify which installed language servers cover the file extensions in `{files_changed}`. Start each matched server now so it is warm before Phases B–D.
 
 Files with no matching LSP go into `{unscoped_files}` and are passed as full-file context in every dispatch.
-
-**If no files have LSP coverage:** Set `{dispatch_mode}` = `full` and proceed to Step 2.
 
 **If there are unscoped files:** Ask the user:
 
@@ -54,7 +52,15 @@ Include diagnostic issues in the Final Verdict as a separate DIAGNOSTIC ISSUES s
 
 For each LSP-covered file, request all document symbols (`textDocument/documentSymbol`) and cross-reference with diff hunk headers to identify which symbols were actually changed.
 
-Batch all symbol requests in parallel — one per file simultaneously.
+**Pipelined parallel execution:**
+- Maintain a pool of 5–10 concurrent `textDocument/documentSymbol` queries (configurable based on LSP server capacity)
+- Load all changed files into a queue
+- For each file in queue: Issue a `documentSymbol` request
+- Store results in SQLite immediately when each query completes
+- When a query slot opens (one query finishes): immediately start the next queued file (don't wait for batch completion)
+- This pipelined approach maximizes throughput without idle time waiting for batch boundaries
+
+**Symbol deduplication:** Not needed — each file's symbols are unique to that file (LSP returns symbols *defined* in each file, not all visible symbols)
 
 ---
 
@@ -66,6 +72,14 @@ For each changed symbol, issue all four LSP traversals in parallel (no ordering 
 - `textDocument/outgoingCalls` — callees, up to 2 hops
 - `typeHierarchy/supertypes` — base types / implemented interfaces, up to 2 hops
 - `typeHierarchy/subtypes` — derived classes / implementors, up to 2 hops
+
+**Pipelined parallel execution:**
+- Maintain a pool of 10–20 concurrent symbol analyses (configurable based on LSP server capacity)
+- Load all extracted symbols from Phase C into a queue
+- For each symbol in queue: Issue all 4 LSP calls in parallel (these 4 calls are interdependent only within the symbol, not across symbols)
+- Store results in SQLite immediately when a symbol's 4 calls complete
+- When a pool slot opens (one symbol's analysis finishes): immediately start the next queued symbol (don't wait for batch completion)
+- This pipelined approach maximizes throughput: continuous streaming of results with no idle time waiting for batch boundaries
 
 **Exclude:** generated files (`*.generated.*`, `*.designer.*`, `*.g.cs`, `*_pb2.py`) and files outside the repository root. Deduplicate across all four traversals before clustering.
 
