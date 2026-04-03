@@ -16,13 +16,10 @@ much as your defences.
 <variables>
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping
-- `{cluster_id}` — this cluster's ID (e.g., "cluster_1")
-- `{symbol_ids_json}` — JSON array of symbol IDs in this cluster
-- `{affected_files_json}` — JSON array of all files touched by cluster's symbols
-- `{unscoped_files}` — files with no LSP coverage (passed as full-file context)
+- `{cluster_id}` — this cluster's ID (e.g., "cluster_1"); query review_scope to get affected files
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
-- `{review_id}` — used to retrieve the transcript and LSP data from session_store
+- `{review_id}` — used to query SQLite: review_scope, lsp_symbols, lsp_blast_radius, review_transcript_entries
 - `{instance}` — this instance's identity e.g. `advocate_1`, `advocate_2`
 - `{round}` — current round number
 </variables>
