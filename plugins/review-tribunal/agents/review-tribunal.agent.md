@@ -221,12 +221,14 @@ providers) and stop. Do not dispatch any subagent until this passes.
 
 ### Phase 1 — Skeptics (parallel)
 
-Invoke one `@review-tribunal-skeptic` instance per cluster from `{scope_path}`, up to
-`{tribunal_size}` clusters in parallel. If there are more clusters than Skeptic slots,
-queue remaining clusters and process in batches. Each instance receives: `{overall_goal}`,
-`{subtask_goals}`, `{cluster}`, `{scope_path}`, `{diff_path}`, `{index_path}`, `{review_id}`,
-`{instance}` (e.g. `skeptic_1`), `{round}`.
-Unsupported and excluded files listed in `{scope_path}` are appended as full-file context.
+Read clusters from `review_scope` table:
+```sql
+SELECT cluster_id, symbol_ids_json, affected_files_json FROM review_scope WHERE review_id = ?;
+```
+
+Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{symbol_ids_json}`, `{affected_files_json}`, `{unscoped_files}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
+
+Pass `{unscoped_files}` (from Phase A) as full-file context to every Skeptic dispatch.
 
 Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from
 narrative text. If a Skeptic's output is not valid JSON, apply Rule 13 (fail explicitly).
@@ -249,16 +251,9 @@ as an additional variable so it can treat unreadable files as Gaps.
 
 ### Phase 2 — Advocates (parallel)
 
-Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of
-`@review-tribunal-advocate` simultaneously. Each instance must be invoked with its assigned
-model (`advocate_models[n]`) and passed the following variables: `{overall_goal}`,
-`{subtask_goals}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
+Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of `@review-tribunal-advocate` simultaneously. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
 
-Also pass `{cluster}`, `{scope_path}`, `{diff_path}`, `{index_path}` matching the
-cluster the paired Skeptic reviewed. In batched mode (more clusters than Skeptic slots),
-each Advocate instance receives the combined findings from **all Skeptics in the current
-batch** — not only the findings from its paired Skeptic. Pass all Skeptic outputs for the
-batch in each Advocate's dispatch brief.
+Also pass: `{cluster_id}`, `{symbol_ids_json}`, `{affected_files_json}`, `{unscoped_files}`, `{diff_path}`, `{index_path}` matching the cluster the paired Skeptic reviewed. In batched mode, each Advocate receives combined findings from **all Skeptics in the current batch**.
 
 Each Advocate returns a JSON object. Parse it deterministically. If an Advocate's output
 is not valid JSON, apply Rule 13.
@@ -275,12 +270,9 @@ VALUES (?, ?, ?, ?, ?);
 
 ### Phase 3 — Judge
 
-Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge`
-using `{judge_model}`. Pass the following variables: `{overall_goal}`, `{subtask_goals}`,
-`{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty array).
+Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
 
-Also pass `{scope_path}`, `{diff_path}`, `{index_path}` and all cluster objects
-so the Judge has the full picture across all Skeptic/Advocate pairs.
+Also pass all cluster objects (from review_scope) so the Judge sees the full picture across all Skeptic/Advocate pairs.
 
 The Judge returns a JSON object. Parse it deterministically. If the Judge's output is not
 valid JSON, apply Rule 13.
