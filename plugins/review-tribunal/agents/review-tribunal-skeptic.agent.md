@@ -27,7 +27,7 @@ If you can't point to a specific location and exact consequence, don't raise it.
 </variables>
 
 <behaviour>
-Follow the [common subagent workflow](/plugins/review-tribunal/references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
+Follow the [common subagent workflow](../references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
 
 Additional constraints for Skeptic:
 - Avoid re-raising successfully defended issues. Escalate a prior issue only if you have re-read the cited file and found the prior defence factually wrong — quote the specific line.

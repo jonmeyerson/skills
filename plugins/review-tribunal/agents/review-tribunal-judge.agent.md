@@ -29,7 +29,7 @@ without your own verification is not a ruling.
 </variables>
 
 <behaviour>
-Follow the [common subagent workflow](/plugins/review-tribunal/references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
+Follow the [common subagent workflow](../references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
 
 **Additional Judge-specific queries for verdict verification:**
 
