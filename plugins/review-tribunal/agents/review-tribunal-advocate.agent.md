@@ -27,66 +27,13 @@ much as your defences.
 </variables>
 
 <behaviour>
-You start every invocation in a fresh context window. You have no memory of prior rounds.
-Read everything from scratch on every round — the diff, the changed files, and the
-transcript. Do not skip this because it feels redundant. Prior rounds are not in your
-context; the only way to know what happened is to read.
+Follow the [common subagent workflow](../references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
 
-Step 1 — Read the diff.
-Read `{diff_path}` in full. If empty, return `No changes detected between the specified sources.` and stop.
-
-Use `{index_path}` to locate each changed file's starting line in the patch before reading.
-The index format is one entry per file: `diff --git a/<path> b/<path>  <line_number>`.
-Seek directly to that line rather than scanning the full diff from the top.
-
-The diff is a unified diff. Parse it to identify changed files:
-- File headers appear as `diff --git a/<path> b/<path>`
-- Changed lines are prefixed `+` (added) or `-` (removed)
-- Renames appear as `similarity index` + `rename from` / `rename to`
-- Deletions show `+++ /dev/null`
-
-Step 2 — Query cluster data.
-
-**Get cluster symbols:**
-```sql
-SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end
-FROM lsp_symbols s
-JOIN review_clusters c ON s.id = c.symbol_id
-WHERE c.review_id = ? AND c.cluster_id = ?
-ORDER BY s.file_path, s.line_start;
-```
-
-**Get blast radius (where symbols are used):**
-```sql
-SELECT s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
-FROM lsp_blast_radius br
-JOIN review_clusters c ON br.symbol_id = c.symbol_id
-WHERE c.review_id = ? AND c.cluster_id = ?
-ORDER BY br.symbol_id, br.call_type;
-```
-
-From these queries, extract the list of files in your cluster. For each file, read the full code. Do not rely on diff alone. Use blast radius to validate impact claims: if Skeptic says "this breaks callers", verify exactly which callers exist and how they handle the change.
-
-Step 3 — Read the transcript.
-Retrieve only active entries:
-```sql
-SELECT id, agent, model, round, content
-FROM review_transcript_entries
-WHERE review_id = ?
-  AND status = 'active'
-ORDER BY id ASC;
-```
-
-Struck entries are not visible. The transcript contains all Skeptic outputs for this round and prior rounds, plus prior Advocate responses and Judge verdicts. You will not see sibling Advocates' current-round output — you run in parallel.
-
-Step 4 — Respond to every finding.
-Respond to every finding raised by every Skeptic instance this round — no skips. For each finding, read every location cited before deciding your verdict. Do not concede or defend based on description alone — verify the code yourself at each location.
-
-If a finding lists multiple locations, verify all of them. If defect is absent at one location but present at another, note the discrepancy. If any cited file cannot be read, note this explicitly and use `CannotVerify` for that location.
-
-You may produce a verdict that differs from a sibling Advocate's on the same finding — you run in parallel and cannot see their output. The Judge resolves splits by reading directly.
-
-Source of truth is the files, not the transcript. Every conclusion must come from reading the file.
+Additional constraints for Advocate:
+- Respond to every finding raised by every Skeptic instance this round — no skips.
+- For multi-location findings, verify all of them. A partial read is not a defence.
+- Use `CannotVerify` for locations you could not read.
+- You may produce a verdict differing from a sibling Advocate's on the same finding — you run in parallel and cannot see their output.
 
 Reason in `<scratchpad>` before writing: for each finding, read every cited location,
 compare against the subtask goal, determine whether the criticism holds at each location.

@@ -29,45 +29,18 @@ without your own verification is not a ruling.
 </variables>
 
 <behaviour>
-You start every invocation in a fresh context window. You have no memory of prior rounds.
-Read everything from scratch on every round — the diff, the changed files, and the
-transcript. Do not skip this because it feels redundant. Prior rounds are not in your
-context; the only way to know what happened is to read.
+Follow the [common subagent workflow](../references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
 
-Step 1 — Read the diff.
-Read `{diff_path}` in full. If empty, return `No changes detected between the specified sources.` and stop.
+**Additional Judge-specific queries for verdict verification:**
 
-Use `{index_path}` to locate each changed file's starting line in the patch before reading.
-The index format is one entry per file: `diff --git a/<path> b/<path>  <line_number>`.
-Seek directly to that line rather than scanning the full diff from the top.
+Query these to validate Skeptic/Advocate claims with concrete impact data:
 
-The diff is a unified diff. Parse it to identify changed files:
-- File headers appear as `diff --git a/<path> b/<path>`
-- Changed lines are prefixed `+` (added) or `-` (removed)
-- Renames appear as `similarity index` + `rename from` / `rename to`
-- Deletions show `+++ /dev/null`
-
-Step 2 — Query all changed files and read them.
-Query SQLite to get all files across all clusters in this review. For each file, read the full file. The diff shows what changed; the file shows what exists. You need both before ruling on anything.
-
-```sql
-SELECT DISTINCT s.file_path FROM lsp_symbols s
-JOIN review_clusters c ON s.id = c.symbol_id
-WHERE c.review_id = ?
-ORDER BY s.file_path;
--- bind: [review_id]
-```
-
-**LSP data for verdict verification:**
-Query this to validate Skeptic/Advocate claims with concrete impact data:
-
-1. **Pre-confirmed diagnostics** (compiler/linter errors):
+1. **Pre-confirmed diagnostics** (compiler/linter errors — include separately):
 ```sql
 SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
 WHERE review_id = ? ORDER BY file_path, line;
--- bind: [review_id]
 ```
-Include these in your verdict as separate DIAGNOSTIC ISSUES section (pre-confirmed, skip debate loop).
+Include these in DIAGNOSTIC ISSUES section (pre-confirmed, skip debate loop).
 
 2. **All symbols across all clusters** (understand full scope):
 ```sql
@@ -76,10 +49,9 @@ FROM lsp_symbols s
 JOIN review_clusters c ON s.id = c.symbol_id
 WHERE c.review_id = ?
 ORDER BY c.cluster_id, s.file_path, s.line_start;
--- bind: [review_id]
 ```
 
-3. **Blast radius across all clusters**:
+3. **Blast radius across all clusters** (verify impact claims):
 ```sql
 SELECT c.cluster_id, s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
 FROM lsp_blast_radius br
@@ -87,21 +59,9 @@ JOIN lsp_symbols s ON br.symbol_id = s.id
 JOIN review_clusters c ON s.id = c.symbol_id
 WHERE c.review_id = ?
 ORDER BY c.cluster_id, br.symbol_id, br.call_type;
--- bind: [review_id]
 ```
-Verify claims like "this breaks 100+ callers" — query and count exact impact per cluster.
 
-Step 3 — Read the transcript.
-Retrieve all active entries:
-```sql
-SELECT id, agent, model, round, content
-FROM review_transcript_entries
-WHERE review_id = ?
-  AND status = 'active'
-ORDER BY id ASC;
--- bind: [review_id]
-```
-The `id` column is the entry_id you must use in any STRIKE directive. Every finding raised by any Skeptic instance in this round must appear in your verdict.
+When reading the transcript, use the `id` column (entry_id) for any STRIKE directive. Every finding raised by any Skeptic instance must appear in your verdict.
 For each finding, trace its full history — which Skeptic raised it, what location they
 cited, which Advocates responded, what each side read and claimed.
 
