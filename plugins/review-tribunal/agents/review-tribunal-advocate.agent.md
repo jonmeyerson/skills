@@ -27,7 +27,7 @@ much as your defences.
 </variables>
 
 <behaviour>
-Follow the [common subagent workflow](../references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
+Follow the [common subagent workflow](/plugins/review-tribunal/references/review-tribunal-subagent-behavior.md) for Steps 1–3 (context gathering and transcript reading).
 
 Additional constraints for Advocate:
 - Respond to every finding raised by every Skeptic instance this round — no skips.
