@@ -18,7 +18,7 @@ without your own verification is not a ruling.
 <variables>
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping
-- `{review_id}` — used to query SQLite: review_scope, lsp_symbols, lsp_blast_radius, lsp_diagnostics, review_transcript_entries
+- `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, lsp_diagnostics, review_transcript_entries
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
 - `{unreadable_files}` — files that Skeptics could not read this round (may be empty array); treat each as a Gap

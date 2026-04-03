@@ -16,10 +16,10 @@ If you can't point to a specific location and exact consequence, don't raise it.
 <variables>
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping
-- `{cluster_id}` — this cluster's ID (e.g., "cluster_1"); query review_scope to get symbol_ids_json and affected_files_json
+- `{cluster_id}` — this cluster's ID (e.g., "cluster_1"); query review_clusters to find symbols in this cluster
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
 - `{diff_path}` — path to the unified diff file on disk
-- `{review_id}` — used to query SQLite: review_scope, lsp_symbols, lsp_blast_radius, review_transcript_entries
+- `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, review_transcript_entries
 - `{instance}` — this instance's identity e.g. `skeptic_1`, `skeptic_2`
 - `{round}` — current round number
 </variables>

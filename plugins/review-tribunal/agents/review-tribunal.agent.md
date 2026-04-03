@@ -200,9 +200,16 @@ If the provided mapping is not valid JSON or contains keys not present in `{file
 report the error to the user and stop. Any file in `{files_changed}` not covered by the
 explicit mapping falls back to `{goal}`.
 
-### Phase — LSP Scoping
+### LSP Scoping (Phases A–E)
 
-Always use LSP scoping for improved accuracy. Execute the [full LSP scoping workflow (Phases A–E)](../references/review-tribunal-lsp-scoping.md).
+Always execute the full LSP scoping workflow:
+- **Phase A**: Discover LSP servers and start them
+- **Phase B**: Collect diagnostics (pre-confirmed issues)
+- **Phase C**: Extract changed symbols (pipelined)
+- **Phase D**: Build blast radius via 4-way LSP traversals (pipelined)
+- **Phase E**: Cluster findings into manageable chunks
+
+Full implementation: [review-tribunal-lsp-scoping.md](../references/review-tribunal-lsp-scoping.md)
 
 Run `{debate_rounds}` rounds. Each round follows this exact sequence.
 
@@ -221,9 +228,11 @@ providers) and stop. Do not dispatch any subagent until this passes.
 
 ### Phase 1 — Skeptics (parallel)
 
-Read clusters from `review_scope` table:
+Read all clusters from `review_clusters` table. Query to identify which cluster each symbol belongs to:
 ```sql
-SELECT cluster_id, symbol_ids_json, affected_files_json FROM review_scope WHERE review_id = ?;
+SELECT DISTINCT c.cluster_id FROM review_clusters 
+WHERE review_id = ? ORDER BY c.cluster_id;
+-- bind: [review_id]
 ```
 
 Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
