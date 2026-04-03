@@ -77,13 +77,26 @@ LSP returns symbols *defined* in each file. If the same symbol (same name, type,
    - INSERT into `lsp_symbols` table with PRIMARY file as `file_path`
    - Note: The same symbol appearing in multiple files is a rare edge case (usually indicates copy-paste or multiple definitions). Pick the first occurrence as primary.
 
-**Storing in SQLite:**
-```sql
-INSERT INTO lsp_symbols (
-    review_id, file_path, symbol_name, symbol_type, namespace, line_start, line_end
-) VALUES (?, ?, ?, ?, ?, ?, ?);
--- bind: [review_id, primary_file_path, symbol_name, symbol_type, namespace, line_start, line_end]
-```
+**Storing in SQLite — Detailed insertion process:**
+
+1. **Extract symbols from LSP responses:**
+   - For each file: Parse `textDocument/documentSymbol` response
+   - For each symbol in response: Extract (symbol_name, symbol_type, namespace/qualified_name, line_start, line_end, file_path)
+   - Cross-reference symbol line ranges with diff hunks to confirm symbol was actually changed (only store changed symbols)
+
+2. **Deduplication in memory:**
+   - Group extracted symbols by `(symbol_name, symbol_type, namespace)` 
+   - For each group with multiple files: select the FIRST file as primary_file_path
+   - Create deduplicated list: `[(symbol_name, symbol_type, namespace, primary_file_path, line_start, line_end), ...]`
+
+3. **Insert deduplicated symbols:**
+   ```sql
+   INSERT INTO lsp_symbols (
+       review_id, file_path, symbol_name, symbol_type, namespace, line_start, line_end
+   ) VALUES (?, ?, ?, ?, ?, ?, ?);
+   -- For each deduplicated symbol:
+   -- bind: [review_id, primary_file_path, symbol_name, symbol_type, namespace, line_start, line_end]
+   ```
 
 Store one row per *unique* symbol (deduplicated by symbol_name, symbol_type, namespace). The `file_path` column contains the primary definition file.
 
@@ -110,58 +123,82 @@ For each changed symbol, issue all four LSP traversals in parallel (no ordering 
 - When a pool slot opens (one symbol's analysis finishes): immediately start the next queued symbol (don't wait for batch completion)
 - This pipelined approach maximizes throughput: continuous streaming of results with no idle time waiting for batch boundaries
 
-**Storing blast radius results in SQLite:**
-For each of the 4 LSP call results (incomingCalls, outgoingCalls, supertypes, subtypes), deduplicate and store:
-```sql
-INSERT INTO lsp_blast_radius (
-    review_id, symbol_id, call_type, target_symbol, target_file, distance, namespace
-) VALUES (?, ?, ?, ?, ?, ?, ?);
--- bind: [review_id, symbol_id, 'incomingCall'|'outgoingCall'|'supertype'|'subtype', 
---        target_name, target_file, distance_hop_count, target_namespace]
-```
+**Storing blast radius results in SQLite — Detailed insertion process:**
 
-For each call type (incomingCalls, outgoingCalls, supertypes, subtypes):
-1. Collect all results from LSP
-2. **Deduplicate** across all four traversals by `(target_symbol, target_file, call_type)` — avoid duplicate edges
-3. **Exclude:** generated files (`*.generated.*`, `*.designer.*`, `*.g.cs`, `*_pb2.py`) and files outside the repository root
-4. INSERT each unique result into `lsp_blast_radius` table with the symbol_id foreign key
+For each symbol from `lsp_symbols` (in pipelined parallel pool):
+
+1. **Issue 4 LSP calls in parallel:**
+   - Call 1: `textDocument/incomingCalls(symbol_name, symbol_file, up_to_2_hops)` → list of callers
+   - Call 2: `textDocument/outgoingCalls(symbol_name, symbol_file, up_to_2_hops)` → list of callees
+   - Call 3: `typeHierarchy/supertypes(symbol_name, symbol_file, up_to_2_hops)` → base types/interfaces
+   - Call 4: `typeHierarchy/subtypes(symbol_name, symbol_file, up_to_2_hops)` → derived classes/implementors
+   - Wait for all 4 to complete
+
+2. **Process and deduplicate results:**
+   - Collect all results from 4 calls
+   - For each result: extract (target_symbol_name, target_file, distance_hop_count)
+   - Apply exclusions: skip generated files (`*.generated.*`, `*.designer.*`, `*.g.cs`, `*_pb2.py`) and files outside repo root
+   - Deduplicate by `(target_symbol, target_file, call_type)` — if same target appears in multiple traversals, keep only one row per call_type
+   - Build in-memory list: `[(call_type, target_symbol, target_file, distance, namespace), ...]`
+
+3. **Insert deduplicated blast radius results:**
+   ```sql
+   INSERT INTO lsp_blast_radius (
+       review_id, symbol_id, call_type, target_symbol, target_file, distance, namespace
+   ) VALUES (?, ?, ?, ?, ?, ?, ?);
+   -- For each deduplicated result:
+   -- bind: [review_id, symbol_id, 'incomingCall'|'outgoingCall'|'supertype'|'subtype',
+   --        target_symbol_name, target_file_path, distance_hop_count, target_namespace]
+   ```
+
+Store one row per unique `(call_type, target_symbol, target_file, distance)` combination per symbol.
 
 ---
 
-## Phase E — Cluster and write scope file
+## Phase E — Cluster and store in SQLite
 
 Group changed symbols and their blast radius into clusters. Target: all content for a cluster fits within a 6000-line budget (diff hunks + file sections combined). Split large clusters at file boundaries.
 
-Write `{session_store}/files/review-{review_id}-scope.json`:
+**Clustering algorithm:**
 
-```json
-{
-  "dispatch_mode": "scoped",
-  "diagnostics_path": "{session_store}/files/review-{review_id}-diagnostics.json",
-  "clusters": [
-    {
-      "cluster_id": "cluster_1",
-      "changed_symbols": ["AuthService.Login"],
-      "files": [
-        { "file": "src/Services/AuthService.cs",      "lines": [28, 51] },
-        { "file": "src/Controllers/AuthController.cs", "lines": [12, 40] },
-        { "file": "tests/AuthServiceTests.cs",         "lines": [20, 45] }
-      ],
-      "diff_hunks": ["AuthService.cs:30-36"]
-    }
-  ],
-  "unscoped_files": ["<files with no LSP coverage — passed as full-file context>"]
-}
+1. **Read all symbols and their blast radius from SQLite:**
+   ```sql
+   SELECT id, symbol_name, symbol_type, namespace, file_path 
+   FROM lsp_symbols WHERE review_id = ?;
+   
+   SELECT symbol_id, call_type, target_symbol, target_file, distance
+   FROM lsp_blast_radius WHERE review_id = ?;
+   ```
+
+2. **Build clusters:**
+   - For each symbol: calculate its "reach" (all files touched by it and its blast radius)
+   - Group symbols into clusters, targeting 6000-line budget per cluster (estimate from diff patch line counts)
+   - Split large clusters at file boundaries (don't split a file across clusters)
+   - Assign cluster_id (e.g., "cluster_1", "cluster_2", ...)
+
+3. **Store cluster metadata in SQLite:**
+   ```sql
+   INSERT INTO review_scope (
+       review_id, cluster_id, symbol_ids_json, affected_files_json, line_range
+   ) VALUES (?, ?, ?, ?, ?);
+   -- bind: [review_id, cluster_id, 
+   --        json_array(symbol_id1, symbol_id2, ...), 
+   --        json_array(file1, file2, ...), 
+   --        "summary of line ranges or NULL"]
+   ```
+   
+   For each cluster, store:
+   - `cluster_id`: unique within review (e.g., "cluster_1")
+   - `symbol_ids_json`: JSON array of symbol IDs in this cluster (from lsp_symbols.id)
+   - `affected_files_json`: JSON array of all files touched by symbols + blast radius
+   - `line_range`: optional summary of line ranges (can be NULL)
+
+**Query clusters for Dispatch:**
+
+When dispatching to Skeptics/Advocates/Judge, query each cluster:
+```sql
+SELECT symbol_ids_json, affected_files_json FROM review_scope 
+WHERE review_id = ? AND cluster_id = ?;
 ```
 
-Set `{scope_path}` = `{session_store}/files/review-{review_id}-scope.json`.
-
----
-
-## Dispatch with Scoped Context
-
-In Step 2, when `{dispatch_mode}` = `scoped`:
-
-- Each Skeptic instance is assigned one cluster from `{scope_path}` instead of the full `{files_changed}` and `{diff_path}`
-- Pass `{cluster}` and `{scope_path}` as additional variables
-- Files in `unscoped_files` are appended to every dispatch as full-file context
+Expand the JSON arrays and construct the dispatch context from lsp_symbols and lsp_blast_radius tables.
