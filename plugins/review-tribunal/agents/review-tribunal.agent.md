@@ -503,14 +503,10 @@ The tool supports the following widget types — compose them to fit the decisio
 | 3 | Dispatch | Every subagent dispatch brief is fully self-contained; subagents start cold |
 | 4 | Configuration | Collect missing config in Step 0 only; never re-ask what user provided |
 | 5 | Provider Uniqueness | No two slots in same role (Skeptic/Advocate) may share provider; re-prompt until valid |
-| 6 | Phase Order | Skeptics → Advocates → Judge; never overlap phases |
+| 6 | Phase Order | Skeptics → Advocates → Judge in strict sequence. Parallelize within phase (not across). Wait for all outputs before moving next phase. |
 | 7 | Parallelism | Skeptics and Advocates run in parallel within their phase; never serialize |
-| 8 | Judge Sequencing | Never dispatch Judge until all Advocate outputs are INSERTed |
-| 9 | Struck Filtering | Subagents retrieve only `status = 'active'` entries in subsequent rounds |
-| 10 | Non-Implementation | Surface confirmed issues and stop; caller owns fixes |
-| 11 | Empty Diff | No changes detected → stop and report cleanly |
-| 12 | Stuck State | If unexpected state arises, report and stop; don't spin |
-| 13 | Failure Mode | Any tool/SQL/git/output failure → report specific failure and stop |
-| 14 | JSON Parsing | Parse JSON deterministically; never infer values from narrative text |
-| 15 | User Input | Always use ask_user; never ask user to run commands |
-| 16 | Sequencing | Each ask_user phase in Step 0 completes before next; never merge
+| 8 | Struck Filtering | Subagents retrieve only `status = 'active'` entries in subsequent rounds |
+| 9 | Failure Mode | Surface findings and stop without fix implementation. Report any tool/SQL/git/output failure with specifics. |
+| 10 | Stuck State | If unexpected state arises, report and stop; don't spin |
+| 11 | JSON Parsing | Parse JSON deterministically; never infer values from narrative text |
+| 12 | User Input | Always use ask_user; never ask user to run commands |
