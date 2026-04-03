@@ -2,8 +2,6 @@
 
 Executed for all diffs (improved accuracy for all changes).
 
-**Important:** Start Phase A immediately — LSP server startup can be slow. Beginning discovery now prevents it from blocking subagent dispatch later. Phases B–E depend on LSP being ready, so start the server in Phase A and wait for readiness before issuing any LSP requests.
-
 ---
 
 ## Phase A — Discover LSPs and start servers
