@@ -46,49 +46,11 @@ First, assign models to all slots (Skeptic, Advocate, Judge):
 
 **Phase 4a — Model assignment:**
 
-Models available:
-- Anthropic: `claude-sonnet-4.6` · `claude-haiku-4.5`
-- OpenAI: `gpt-5.4` · `gpt-5.3-codex`
-- Google: `gemini-2.5` · `gemini-3-flash`
+Models available: Anthropic (`claude-sonnet-4.6`, `claude-haiku-4.5`), OpenAI (`gpt-5.4`, `gpt-5.3-codex`), Google (`gemini-2.5`, `gemini-3-flash`).
 
-Ask Skeptic and Advocate slots in paired calls:
+Ask Skeptic and Advocate slots in paired `ask_user` calls. No two slots in the same role may share a provider. After all Skeptic/Advocate slots, ask Judge (no provider constraints).
 
-```
-ask_user([
-  { question: "Skeptic 1 model", options: [...] },
-  { question: "Advocate 1 model", options: [...] },
-])
-
-ask_user([
-  { question: "Skeptic 2 model", options: [...provider-filtered...] },
-  { question: "Advocate 2 model", options: [...provider-filtered...] },
-])
-```
-
-Paired slots (Skeptic N + Advocate N) asked together. Provider filtering: no two slots in same role share a provider.
-
-After all Skeptic and Advocate slots, ask for Judge model separately (no provider constraints).
-
-**Provider uniqueness:** No two slots within the same role (Skeptics, Advocates) may
-share a provider. Slots across different roles may share a provider.
-If the user's selections violate this rule, do not silently accept them — re-prompt only
-the conflicting slot(s) in a new `ask_user` call, and explain the conflict. Keep
-re-prompting until every slot in each role has a distinct provider. Do not proceed until
-all selections are valid.
-
-**Re-prompt Example:**
-```
-User selected: Skeptic 1 = claude-sonnet-4.6, Skeptic 2 = claude-haiku-4.5 ✓
-Validation: Both Anthropic providers. INVALID.
-
-Re-prompt message:
-"Skeptic 1 and Skeptic 2 both use Anthropic models. Each Skeptic slot must use a different provider.
-Please select a different provider for Skeptic 2."
-
-ask_user([
-  { question: "Skeptic 2 model (conflict)", options: [...provider-filtered...] }
-])
-```
+If user violates provider uniqueness within a role, re-prompt only the conflicting slot(s) with filtered options until valid.
 
 ---
 
