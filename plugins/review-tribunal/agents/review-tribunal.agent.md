@@ -98,29 +98,13 @@ After collecting configuration in Step 0, define these variables for dispatch:
 
 All review files are written to `{session_store}/files/`.
 
-Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) to generate the patch and the changed-file list.
-The `-OutputPath` must be constructed by the orchestrator before invoking the script.
+Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) with:
+- **Branch mode**: `-Mode branch -Base {base} -Head {head}`
+- **Uncommitted mode**: `-Mode uncommitted -Branch {branch}`
 
-**Mode: `branch:<base>..<head>`**
-```powershell
-$files_changed = & ReviewPatch.ps1 `
-    -Mode       branch `
-    -OutputPath "{session_store}/files/review-{review_id}.patch" `
-    -Base       {base} `
-    -Head       {head}
-```
+Always set `-OutputPath "{session_store}/files/review-{review_id}.patch"`.
 
-**Mode: `uncommitted:<branch>`**
-```powershell
-$files_changed = & ReviewPatch.ps1 `
-    -Mode       uncommitted `
-    -OutputPath "{session_store}/files/review-{review_id}.patch" `
-    -Branch     {branch}
-```
-
-The script writes the patch to `{OutputPath}` and returns the list of changed file
-paths to stdout (newline-separated). Capture stdout as `{files_changed}`.
-If the script exits non-zero, apply Rule 13 (fail explicitly).
+Capture stdout as `{files_changed}` (newline-separated file paths). If non-zero exit, apply Rule 13.
 
 If `{files_changed}` is empty: output `No changes detected between the specified sources.` and stop.
 
