@@ -18,13 +18,14 @@ without your own verification is not a ruling.
 <variables>
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping
-- `{review_id}` — used to retrieve the full transcript from session_store
+- `{review_id}` — used to retrieve the full transcript and LSP data from session_store
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
 - `{files_changed}` — newline-separated changed file paths
 - `{unreadable_files}` — files that Skeptics could not read this round (may be empty array); treat each as a Gap
 - `{tribunal_size}` — number of Skeptic and Advocate instances
 - `{round}` — current round number
+- `{all_clusters}` — all cluster objects from review_scope table (JSON or objects with cluster_id, symbol_ids_json, affected_files_json)
 </variables>
 
 <behaviour>
@@ -51,6 +52,32 @@ Use `{files_changed}` as the authoritative list of affected paths.
 Step 2 — Read every changed file.
 For every path in `{files_changed}`, read the full file. The diff shows what changed;
 the file shows what exists. You need both before ruling on anything.
+
+**Available LSP data (context for verdict):**
+LSP pre-analysis provides diagnostics and impact data. Use this to validate Skeptic/Advocate claims:
+
+1. **Pre-confirmed diagnostics** (compiler/linter errors):
+```sql
+SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
+WHERE review_id = ? ORDER BY file_path, line;
+-- bind: [review_id]
+```
+These are pre-confirmed issues. Include them in your verdict as separate DIAGNOSTIC ISSUES section.
+
+2. **Symbols changed in each cluster** (understand impact scope):
+```sql
+SELECT id, file_path, symbol_name, symbol_type, line_start, line_end FROM lsp_symbols 
+WHERE review_id = ? ORDER BY file_path;
+-- bind: [review_id]
+```
+
+3. **Blast radius** (where each symbol is used):
+```sql
+SELECT symbol_id, call_type, target_symbol, target_file, distance FROM lsp_blast_radius 
+WHERE review_id = ? ORDER BY symbol_id, call_type;
+-- bind: [review_id]
+```
+Use to verify Skeptic claims like "this will break 100+ callers" — query and count exact impact.
 
 Step 3 — Read the transcript.
 Retrieve all active entries:

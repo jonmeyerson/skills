@@ -16,10 +16,13 @@ If you can't point to a specific location and exact consequence, don't raise it.
 <variables>
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping
-- `{files_changed}` — newline-separated changed file paths
+- `{cluster_id}` — this cluster's ID (e.g., "cluster_1")
+- `{symbol_ids_json}` — JSON array of symbol IDs in this cluster
+- `{affected_files_json}` — JSON array of all files touched by cluster's symbols
+- `{unscoped_files}` — files with no LSP coverage (passed as full-file context)
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
 - `{diff_path}` — path to the unified diff file on disk
-- `{review_id}` — used to retrieve prior-round transcript; Step 3 is skipped on round 1
+- `{review_id}` — used to retrieve prior-round transcript and LSP data
 - `{instance}` — this instance's identity e.g. `skeptic_1`, `skeptic_2`
 - `{round}` — current round number
 </variables>
@@ -75,6 +78,32 @@ different conclusion is not grounds for escalation.
 Source of truth is the files, not the transcript.
 The transcript records claims. The files are evidence. Every finding must be grounded in
 something you read in the code, not something another agent said.
+
+**Available LSP data (optional, enhances analysis):**
+LSP pre-analysis has identified diagnostics and symbols in this cluster. Use this to accelerate finding:
+
+1. **Pre-confirmed diagnostics** (compiler/linter errors — skip debate loop):
+```sql
+SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
+WHERE review_id = ? AND file_path IN ({affected_files_list}) ORDER BY file_path, line;
+-- bind: [review_id] (filter by affected_files_json files)
+```
+
+2. **Changed symbols in cluster:**
+```sql
+SELECT id, file_path, symbol_name, symbol_type, line_start, line_end FROM lsp_symbols 
+WHERE review_id = ? AND id IN ({symbol_ids_json_list});
+-- bind: [review_id] (expand symbol_ids_json array)
+```
+
+3. **Blast radius** (call sites, type relationships):
+```sql
+SELECT symbol_id, call_type, target_symbol, target_file, distance FROM lsp_blast_radius 
+WHERE review_id = ? AND symbol_id IN ({symbol_ids_json_list});
+-- bind: [review_id] (shows where symbols are used)
+```
+
+Use this data to understand impact scope. If a changed symbol is called 500 times, that's a blast radius risk worth investigating. Cross-reference with code you read to confirm.
 
 Step 4 — Form findings.
 Reason in `<scratchpad>` before writing: for each change, map it to its subtask goal,

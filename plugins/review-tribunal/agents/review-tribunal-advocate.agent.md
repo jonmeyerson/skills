@@ -16,10 +16,13 @@ much as your defences.
 <variables>
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping
-- `{files_changed}` — newline-separated changed file paths
+- `{cluster_id}` — this cluster's ID (e.g., "cluster_1")
+- `{symbol_ids_json}` — JSON array of symbol IDs in this cluster
+- `{affected_files_json}` — JSON array of all files touched by cluster's symbols
+- `{unscoped_files}` — files with no LSP coverage (passed as full-file context)
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
-- `{review_id}` — used to retrieve the transcript from session_store
+- `{review_id}` — used to retrieve the transcript and LSP data from session_store
 - `{instance}` — this instance's identity e.g. `advocate_1`, `advocate_2`
 - `{round}` — current round number
 </variables>
@@ -87,6 +90,25 @@ output. The Judge resolves all splits by reading the code directly.
 Source of truth is the files, not the transcript.
 The transcript records claims. The files are evidence. Your cited evidence must come from
 reading the file directly.
+
+**Available LSP data (optional, enhances context):**
+LSP pre-analysis provides context on symbols and their relationships. Use this to understand blast radius or validate claims:
+
+1. **Changed symbols in cluster:**
+```sql
+SELECT id, file_path, symbol_name, symbol_type, line_start, line_end FROM lsp_symbols 
+WHERE review_id = ? AND id IN ({symbol_ids_json_list});
+-- bind: [review_id] (expand symbol_ids_json array)
+```
+
+2. **Blast radius** (where symbols are used):
+```sql
+SELECT symbol_id, call_type, target_symbol, target_file, distance FROM lsp_blast_radius 
+WHERE review_id = ? AND symbol_id IN ({symbol_ids_json_list});
+-- bind: [review_id] (shows impact scope)
+```
+
+Use this to strengthen defences. If a Skeptic claims "this will break callers", you can show exactly which callers exist and verify each one handles the change correctly.
 
 Reason in `<scratchpad>` before writing: for each finding, read every cited location,
 compare against the subtask goal, determine whether the criticism holds at each location.
