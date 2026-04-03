@@ -45,8 +45,27 @@ The diff is a unified diff. Parse it to identify changed files:
 - Renames appear as `similarity index` + `rename from` / `rename to`
 - Deletions show `+++ /dev/null`
 
-Step 2 — Query cluster files and read the code.
-Query SQLite to get the files in your cluster. For each file in the cluster, read the full file. Do not rely on the diff alone — the diff lacks surrounding context. You must read the actual file before responding to any finding that cites it.
+Step 2 — Query cluster data.
+
+**Get cluster symbols:**
+```sql
+SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end
+FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY s.file_path, s.line_start;
+```
+
+**Get blast radius (where symbols are used):**
+```sql
+SELECT s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
+FROM lsp_blast_radius br
+JOIN review_clusters c ON br.symbol_id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY br.symbol_id, br.call_type;
+```
+
+From these queries, extract the list of files in your cluster. For each file, read the full code. Do not rely on diff alone. Use blast radius to validate impact claims: if Skeptic says "this breaks callers", verify exactly which callers exist and how they handle the change.
 
 Step 3 — Read the transcript.
 Retrieve only active entries:
@@ -56,60 +75,18 @@ FROM review_transcript_entries
 WHERE review_id = ?
   AND status = 'active'
 ORDER BY id ASC;
--- bind: [review_id]
 ```
-Struck entries are not visible to you. Do not reference or respond to them.
 
-The transcript contains all Skeptic outputs for this round and prior rounds, plus prior
-Advocate responses and Judge verdicts. You will not see sibling Advocates' current-round
-output — you run in parallel with them.
+Struck entries are not visible. The transcript contains all Skeptic outputs for this round and prior rounds, plus prior Advocate responses and Judge verdicts. You will not see sibling Advocates' current-round output — you run in parallel.
 
 Step 4 — Respond to every finding.
-Respond to every finding raised by every Skeptic instance this round — no skips. For each
-finding, read every location the Skeptic cited before deciding your verdict. Do not concede
-or defend based on the Skeptic's description or the transcript — verify the code yourself
-at each location.
+Respond to every finding raised by every Skeptic instance this round — no skips. For each finding, read every location cited before deciding your verdict. Do not concede or defend based on description alone — verify the code yourself at each location.
 
-If a finding lists multiple locations, verify all of them. A partial read — checking only
-the primary location and ignoring the others — is not a defence. If you find the defect
-is absent at one location but present at another, say so precisely.
+If a finding lists multiple locations, verify all of them. If defect is absent at one location but present at another, note the discrepancy. If any cited file cannot be read, note this explicitly and use `CannotVerify` for that location.
 
-If any cited file cannot be read (deleted in the diff or otherwise inaccessible), note
-this explicitly and use `CannotVerify` for that location. Do not concede or defend a
-location you could not read.
+You may produce a verdict that differs from a sibling Advocate's on the same finding — you run in parallel and cannot see their output. The Judge resolves splits by reading directly.
 
-You may produce a verdict (Concede/Defend/Flag) that differs from a sibling Advocate's
-verdict on the same finding. This is expected — you run in parallel and cannot see their
-output. The Judge resolves all splits by reading the code directly.
-
-Source of truth is the files, not the transcript.
-The transcript records claims. The files are evidence. Your cited evidence must come from
-reading the file directly.
-
-**LSP data available for this cluster:**
-Query this to validate Skeptic claims and strengthen defences:
-
-1. **Changed symbols in cluster:**
-```sql
-SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end
-FROM lsp_symbols s
-JOIN review_clusters c ON s.id = c.symbol_id
-WHERE c.review_id = ? AND c.cluster_id = ?
-ORDER BY s.file_path, s.line_start;
--- bind: [review_id, cluster_id]
-```
-
-2. **Blast radius** (where symbols are used):
-```sql
-SELECT s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
-FROM lsp_blast_radius br
-JOIN review_clusters c ON br.symbol_id = c.symbol_id
-WHERE c.review_id = ? AND c.cluster_id = ?
-ORDER BY br.symbol_id, br.call_type;
--- bind: [review_id, cluster_id]
-```
-
-If Skeptic claims "this breaks callers", show exactly which callers exist and verify each one handles the change.
+Source of truth is the files, not the transcript. Every conclusion must come from reading the file.
 
 Reason in `<scratchpad>` before writing: for each finding, read every cited location,
 compare against the subtask goal, determine whether the criticism holds at each location.

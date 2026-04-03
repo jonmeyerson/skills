@@ -45,8 +45,33 @@ The diff is a unified diff. Parse it to identify changed files:
 - Renames appear as `similarity index` + `rename from` / `rename to`
 - Deletions show `+++ /dev/null`
 
-Step 2 — Query cluster files and read the code.
-Query SQLite to get the files in your cluster (see LSP data section below). For each file in the cluster, read the full file. Do not rely on the diff alone — the diff lacks surrounding context that is often essential to identifying real defects.
+Step 2 — Query cluster data.
+
+**Get cluster symbols:**
+```sql
+SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end, s.namespace
+FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY s.file_path, s.line_start;
+```
+
+**Get pre-confirmed diagnostics (compiler/linter errors — these skip debate):**
+```sql
+SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
+WHERE review_id = ? ORDER BY file_path, line;
+```
+
+**Get blast radius (where symbols are used):**
+```sql
+SELECT s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
+FROM lsp_blast_radius br
+JOIN review_clusters c ON br.symbol_id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY br.symbol_id, br.call_type;
+```
+
+From these queries, extract the list of files in your cluster. For each file, read the full file code. Do not rely on the diff alone — the diff lacks surrounding context essential to identifying real defects. Use blast radius data to understand impact scope: if a changed symbol is called 500 times, that's a risk worth verifying in code.
 
 Step 3 — Read the transcript (round 2+).
 If `{round}` is greater than 1, retrieve only active entries:
@@ -56,55 +81,13 @@ FROM review_transcript_entries
 WHERE review_id = ?
   AND status = 'active'
 ORDER BY id ASC;
--- bind: [review_id]
-```
-Struck entries are not visible to you. Do not reference or re-raise them.
-
-The transcript tells you what was previously raised, defended, and ruled. Use it to avoid
-re-raising successfully defended issues. Escalate a prior issue only if you have re-read
-the cited file yourself and found the prior defence factually wrong — quote the specific
-line that contradicts it.
-
-Do not escalate any finding that the Judge ruled `Defended` in a prior round unless the
-diff itself changed between rounds (i.e. you are reviewing a new patch). A Judge-Defended
-ruling is final for the current diff. Re-reading the same unchanged file and reaching a
-different conclusion is not grounds for escalation.
-
-Source of truth is the files, not the transcript.
-The transcript records claims. The files are evidence. Every finding must be grounded in
-something you read in the code, not something another agent said.
-
-**LSP data available for this cluster:**
-Query this data to accelerate findings:
-
-1. **Changed symbols in cluster with file/line info:**
-```sql
-SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end, s.namespace
-FROM lsp_symbols s
-JOIN review_clusters c ON s.id = c.symbol_id
-WHERE c.review_id = ? AND c.cluster_id = ?
-ORDER BY s.file_path, s.line_start;
--- bind: [review_id, cluster_id]
 ```
 
-2. **Pre-confirmed diagnostics** (compiler/linter errors — skip debate loop):
-```sql
-SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
-WHERE review_id = ? ORDER BY file_path, line;
--- bind: [review_id]
-```
+Struck entries are not visible to you. Do not reference or re-raise them. The transcript tells you what was previously raised, defended, and ruled. Avoid re-raising successfully defended issues. Escalate a prior issue only if you have re-read the cited file and found the prior defence factually wrong — quote the specific line.
 
-3. **Blast radius** (where symbols are used):
-```sql
-SELECT s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
-FROM lsp_blast_radius br
-JOIN review_clusters c ON br.symbol_id = c.symbol_id
-WHERE c.review_id = ? AND c.cluster_id = ?
-ORDER BY br.symbol_id, br.call_type;
--- bind: [review_id, cluster_id]
-```
+Do not escalate any finding that the Judge ruled `Defended` in a prior round unless the diff changed between rounds. A Judge-Defended ruling is final for the current diff.
 
-Use this to understand impact scope. If a changed symbol is called 500 times, that's a blast radius risk. Cross-reference with code you read to confirm.
+Source of truth is the files, not the transcript. Every finding must be grounded in code you read.
 
 Step 4 — Form findings.
 Reason in `<scratchpad>` before writing: for each change, map it to its subtask goal,
