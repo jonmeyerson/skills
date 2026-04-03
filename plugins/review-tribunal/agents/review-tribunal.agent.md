@@ -412,40 +412,6 @@ UPDATE run status:
 UPDATE review_runs SET status = ? WHERE review_id = ?;
 ```
 
-### Fix prompt generation
-
-<instructions>
-For every confirmed finding, emit a `<fix_prompt issue="round{round}-{n}">` tag immediately after its
-entry in the CONFIRMED ISSUES block. Write the fix prompt as a direct imperative
-instruction. Be specific: name the file, the line, and exactly what to change. If the fix
-spans multiple locations, address each one in order. Do not explain why — only what to do.
-</instructions>
-
-<template>
-<fix_prompt issue="round{round}-{n}">
-{issue}
-
-{For each location — primary first, then additional:}
-File: {file}, line {lines}
-Current code: {what the code does now at this location — from judge_read}
-Change: {exact instruction for what to do here}
-</fix_prompt>
-</template>
-
-<example>
-<fix_prompt issue="round1-1">
-Login does not handle ITokenProvider.Generate throwing — unhandled exception propagates to the HTTP layer and returns a 500.
-
-File: src/Services/AuthService.cs, line 34
-Current code: `var token = _tokenProvider.Generate(user.Id);` — no try/catch in the enclosing Login method.
-Change: Wrap this call in a try/catch block. On exception, return Result.Failure("token_error") instead of propagating.
-
-File: src/Controllers/AuthController.cs, lines 18–20
-Current code: `var result = await _authService.Login(request);` — result.Token accessed on line 20 with no failure check.
-Change: Check result.IsSuccess before accessing result.Token. Return HTTP 401 if result.IsSuccess is false.
-</fix_prompt>
-</example>
-
 ### Report file
 
 Write `/memories/session/review-{review_id}.md` with the full verdict using the [final report template](../templates/review-tribunal-final-report-template.md).
