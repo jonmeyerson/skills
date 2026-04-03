@@ -88,24 +88,30 @@ Source of truth is the files, not the transcript.
 The transcript records claims. The files are evidence. Your cited evidence must come from
 reading the file directly.
 
-**Available LSP data (optional, enhances context):**
-LSP pre-analysis provides context on symbols and their relationships. Use this to understand blast radius or validate claims:
+**Available LSP data (optional, strengthens defences):**
+LSP pre-analysis provides context on symbols and relationships. Use to validate Skeptic claims:
 
 1. **Changed symbols in cluster:**
 ```sql
-SELECT id, file_path, symbol_name, symbol_type, line_start, line_end FROM lsp_symbols 
-WHERE review_id = ? AND id IN ({symbol_ids_json_list});
--- bind: [review_id] (expand symbol_ids_json array)
+SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end
+FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY s.file_path, s.line_start;
+-- bind: [review_id, cluster_id]
 ```
 
 2. **Blast radius** (where symbols are used):
 ```sql
-SELECT symbol_id, call_type, target_symbol, target_file, distance FROM lsp_blast_radius 
-WHERE review_id = ? AND symbol_id IN ({symbol_ids_json_list});
--- bind: [review_id] (shows impact scope)
+SELECT s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
+FROM lsp_blast_radius br
+JOIN review_clusters c ON br.symbol_id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY br.symbol_id, br.call_type;
+-- bind: [review_id, cluster_id]
 ```
 
-Use this to strengthen defences. If a Skeptic claims "this will break callers", you can show exactly which callers exist and verify each one handles the change correctly.
+If Skeptic claims "this breaks callers", show exactly which callers exist and verify each one handles the change.
 
 Reason in `<scratchpad>` before writing: for each finding, read every cited location,
 compare against the subtask goal, determine whether the criticism holds at each location.

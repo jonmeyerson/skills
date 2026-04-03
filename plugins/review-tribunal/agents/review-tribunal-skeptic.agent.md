@@ -77,30 +77,36 @@ The transcript records claims. The files are evidence. Every finding must be gro
 something you read in the code, not something another agent said.
 
 **Available LSP data (optional, enhances analysis):**
-LSP pre-analysis has identified diagnostics and symbols in this cluster. Use this to accelerate finding:
+LSP pre-analysis has identified diagnostics and symbols in this cluster. Use this to accelerate findings:
 
-1. **Pre-confirmed diagnostics** (compiler/linter errors — skip debate loop):
+1. **Changed symbols in cluster with file/line info:**
+```sql
+SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end, s.namespace
+FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY s.file_path, s.line_start;
+-- bind: [review_id, cluster_id]
+```
+
+2. **Pre-confirmed diagnostics** (compiler/linter errors — skip debate loop):
 ```sql
 SELECT file_path, line, column, severity, message FROM lsp_diagnostics 
-WHERE review_id = ? AND file_path IN ({affected_files_list}) ORDER BY file_path, line;
--- bind: [review_id] (filter by affected_files_json files)
+WHERE review_id = ? ORDER BY file_path, line;
+-- bind: [review_id]
 ```
 
-2. **Changed symbols in cluster:**
+3. **Blast radius** (where symbols are used):
 ```sql
-SELECT id, file_path, symbol_name, symbol_type, line_start, line_end FROM lsp_symbols 
-WHERE review_id = ? AND id IN ({symbol_ids_json_list});
--- bind: [review_id] (expand symbol_ids_json array)
+SELECT s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
+FROM lsp_blast_radius br
+JOIN review_clusters c ON br.symbol_id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY br.symbol_id, br.call_type;
+-- bind: [review_id, cluster_id]
 ```
 
-3. **Blast radius** (call sites, type relationships):
-```sql
-SELECT symbol_id, call_type, target_symbol, target_file, distance FROM lsp_blast_radius 
-WHERE review_id = ? AND symbol_id IN ({symbol_ids_json_list});
--- bind: [review_id] (shows where symbols are used)
-```
-
-Use this data to understand impact scope. If a changed symbol is called 500 times, that's a blast radius risk worth investigating. Cross-reference with code you read to confirm.
+Use this to understand impact scope. If a changed symbol is called 500 times, that's a blast radius risk. Cross-reference with code you read to confirm.
 
 Step 4 — Form findings.
 Reason in `<scratchpad>` before writing: for each change, map it to its subtask goal,

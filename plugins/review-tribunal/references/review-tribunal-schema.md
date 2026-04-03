@@ -137,20 +137,28 @@ CREATE TABLE IF NOT EXISTS lsp_blast_radius (
 );
 ```
 
-### review_scope
+### review_clusters
 
-Clustering information from Phase E. Maps clusters to symbols and affected files.
+Clustering information from Phase E. Maps each symbol to its cluster. Join with lsp_symbols to get file paths and line ranges.
 
 ```sql
-CREATE TABLE IF NOT EXISTS review_scope (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    review_id          TEXT    NOT NULL,
-    cluster_id         TEXT    NOT NULL,
-    symbol_ids_json    TEXT    NOT NULL,  -- JSON array of symbol IDs
-    affected_files_json TEXT   NOT NULL,  -- JSON array of file paths
-    line_range         TEXT,               -- summary of line ranges affected
-    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS review_clusters (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id   TEXT    NOT NULL,
+    cluster_id  TEXT    NOT NULL,
+    symbol_id   INTEGER NOT NULL,  -- Foreign key: references lsp_symbols(id)
+    ts          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (symbol_id) REFERENCES lsp_symbols(id)
 );
+```
+
+**Query a cluster's symbols with file/line info:**
+```sql
+SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end, s.namespace
+FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY s.file_path, s.line_start;
 ```
 
 ## Initialization

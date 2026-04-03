@@ -100,7 +100,7 @@ One row per unique `(call_type, target_symbol, target_file, distance)` per symbo
 
 ---
 
-## Phase E — Cluster and store scope
+## Phase E — Cluster and store in SQLite
 
 Read symbols and blast radius:
 ```sql
@@ -113,18 +113,22 @@ SELECT symbol_id, call_type, target_symbol, target_file, distance FROM lsp_blast
 2. Group symbols into clusters: target 6000-line budget per cluster (estimate from diff patch)
 3. Split at file boundaries (don't split files across clusters)
 4. Assign cluster_id ("cluster_1", "cluster_2", etc.)
+5. For each symbol in each cluster: create one row in review_clusters
 
-**Store cluster metadata:**
+**Store cluster assignments:**
 ```sql
-INSERT INTO review_scope (review_id, cluster_id, symbol_ids_json, affected_files_json, line_range)
-VALUES (?, ?, ?, ?, ?);
--- bind: [review_id, cluster_id, json_array(symbol_id1, ...), json_array(file1, ...), "line range summary or NULL"]
+INSERT INTO review_clusters (review_id, cluster_id, symbol_id)
+VALUES (?, ?, ?);
+-- For each symbol in each cluster: [review_id, cluster_id, symbol_id]
 ```
 
-**Query clusters during dispatch:**
+**Query a cluster's symbols during dispatch:**
 ```sql
-SELECT symbol_ids_json, affected_files_json FROM review_scope 
-WHERE review_id = ? AND cluster_id = ?;
+SELECT s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end, s.namespace
+FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ? AND c.cluster_id = ?
+ORDER BY s.file_path, s.line_start;
 ```
 
-Expand JSON arrays. Construct dispatch context from lsp_symbols and lsp_blast_radius tables.
+Subagents use this query to get all symbols in their assigned cluster with full file/line information.

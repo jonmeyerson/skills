@@ -52,7 +52,7 @@ For every path in `{files_changed}`, read the full file. The diff shows what cha
 the file shows what exists. You need both before ruling on anything.
 
 **Available LSP data (context for verdict):**
-LSP pre-analysis provides diagnostics and impact data. Use this to validate Skeptic/Advocate claims:
+LSP pre-analysis provides diagnostics and impact data. Use to validate Skeptic/Advocate claims:
 
 1. **Pre-confirmed diagnostics** (compiler/linter errors):
 ```sql
@@ -60,22 +60,29 @@ SELECT file_path, line, column, severity, message FROM lsp_diagnostics
 WHERE review_id = ? ORDER BY file_path, line;
 -- bind: [review_id]
 ```
-These are pre-confirmed issues. Include them in your verdict as separate DIAGNOSTIC ISSUES section.
+Include these in your verdict as separate DIAGNOSTIC ISSUES section (pre-confirmed, skip debate loop).
 
-2. **Symbols changed in each cluster** (understand impact scope):
+2. **All symbols across all clusters** (understand full scope):
 ```sql
-SELECT id, file_path, symbol_name, symbol_type, line_start, line_end FROM lsp_symbols 
-WHERE review_id = ? ORDER BY file_path;
+SELECT DISTINCT c.cluster_id, s.id, s.file_path, s.symbol_name, s.symbol_type, s.line_start, s.line_end
+FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ?
+ORDER BY c.cluster_id, s.file_path, s.line_start;
 -- bind: [review_id]
 ```
 
-3. **Blast radius** (where each symbol is used):
+3. **Blast radius across all clusters**:
 ```sql
-SELECT symbol_id, call_type, target_symbol, target_file, distance FROM lsp_blast_radius 
-WHERE review_id = ? ORDER BY symbol_id, call_type;
+SELECT c.cluster_id, s.symbol_name, br.call_type, br.target_symbol, br.target_file, br.distance
+FROM lsp_blast_radius br
+JOIN lsp_symbols s ON br.symbol_id = s.id
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ?
+ORDER BY c.cluster_id, br.symbol_id, br.call_type;
 -- bind: [review_id]
 ```
-Use to verify Skeptic claims like "this will break 100+ callers" — query and count exact impact.
+Verify claims like "this breaks 100+ callers" — query and count exact impact per cluster.
 
 Step 3 — Read the transcript.
 Retrieve all active entries:
