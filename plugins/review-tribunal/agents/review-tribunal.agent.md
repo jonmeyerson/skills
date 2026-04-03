@@ -147,46 +147,60 @@ VALUES (?, 0, 'orchestrator', 'n/a', ?);
 --        'REVIEW TRIBUNAL | Diff: {diff_path} | Goal: {goal} | review_id: {review_id} | Size: {tribunal_size} | Starting rounds: {debate_rounds}']
 ```
 
-Build `{subtask_goals}`: map every file in `{files_changed}` to `{goal}` unless the caller
-provided an explicit `file → goal` mapping. If the caller provides an explicit mapping, it
-must be a JSON object with file paths as keys and goal strings as values:
+**Build `{subtask_goals}`:** For each file in `{files_changed}`, map to a specific goal. 
+- If caller provides explicit JSON mapping (`{file_path: goal_string}`), use it per file.
+- Any file not in explicit mapping defaults to `{goal}`.
+- If caller mapping is invalid JSON or contains unknown file paths, report error and stop.
 
-```json
-{
-  "src/Services/AuthService.cs": "Add error handling to the Login method",
-  "tests/AuthServiceTests.cs": "Add unit tests covering Login error cases"
-}
-```
-
-If the provided mapping is not valid JSON or contains keys not present in `{files_changed}`,
-report the error to the user and stop. Any file in `{files_changed}` not covered by the
-explicit mapping falls back to `{goal}`.
+This allows fine-grained review targets: test files get "write tests", service files get "error handling", etc.
 
 ### LSP Scoping (Phases A–E)
 
-Always execute the full LSP scoping workflow:
-- **Phase A**: Discover LSP servers and start them
-- **Phase B**: Collect diagnostics (pre-confirmed issues)
-- **Phase C**: Extract changed symbols (pipelined)
-- **Phase D**: Build blast radius via 4-way LSP traversals (pipelined)
-- **Phase E**: Cluster findings into manageable chunks
+Always execute the full LSP scoping workflow before debate rounds. Use pipelined parallelization (maintain concurrent pool, start next task when slot opens).
 
-Full implementation: [review-tribunal-lsp-scoping.md](../references/review-tribunal-lsp-scoping.md)
+**Phase A — Discover and start LSP servers**
 
-Run `{debate_rounds}` rounds. Each round follows this exact sequence.
+Use `lsp-config` to find language servers for file extensions in `{files_changed}`. Start each. Files without LSP coverage go to `{unscoped_files}` (passed as full context to all dispatches). If unscoped files exist, ask user whether to proceed or install additional servers.
+
+**Phase B — Collect diagnostics (pre-confirmed issues)**
+
+Wait for all LSP servers to report ready. Collect all diagnostics (errors, warnings, type mismatches) per LSP-covered file. Store in SQLite:
+```sql
+INSERT INTO lsp_diagnostics (review_id, file_path, line, column, severity, message, diagnostic_code)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+```
+
+Pre-confirmed issues skip debate loop. Display in final verdict under DIAGNOSTIC ISSUES.
+
+**Phase C — Extract changed symbols (pipelined, pool 5–10)**
+
+For each LSP-covered file: issue `documentSymbol` request. Parse response → extract (symbol_name, symbol_type, namespace, line_start, line_end, file_path). Cross-reference with diff hunks; discard unchanged. Deduplicate by `(symbol_name, symbol_type, namespace)` → store primary file:
+```sql
+INSERT INTO lsp_symbols (review_id, file_path, symbol_name, symbol_type, namespace, line_start, line_end)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+```
+
+**Phase D — Build blast radius (pipelined, pool 10–20)**
+
+For each symbol, parallel issue 4 LSP calls: incomingCalls (up_to_2_hops), outgoingCalls, supertypes, subtypes. Collect results, extract (target_symbol, target_file, distance_hop, call_type). Exclude generated files. Deduplicate by `(target_symbol, target_file, call_type)`:
+```sql
+INSERT INTO lsp_blast_radius (review_id, symbol_id, call_type, target_symbol, target_file, distance, namespace)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+```
+
+**Phase E — Cluster into manageable chunks**
+
+Compute "reach" per symbol (files + blast radius). Group into clusters: target 6000-line budget per cluster, split at file boundaries. Assign cluster_id and store:
+```sql
+INSERT INTO review_clusters (review_id, cluster_id, symbol_id)
+VALUES (?, ?, ?);
+```
+
+After Phase E, run `{debate_rounds}` rounds. Each round follows this exact sequence.
 
 ---
 
 ## Step 2 — Debate Loop
-
-### Pre-dispatch assertion
-
-Before invoking any subagent, verify that model assignments are unique within each role:
-- No two entries in `skeptic_models` share the same provider.
-- No two entries in `advocate_models` share the same provider.
-
-If either check fails, report the conflict to the user (listing the duplicate slots and
-providers) and stop. Do not dispatch any subagent until this passes.
 
 ### Phase 1 — Skeptics (parallel)
 
@@ -201,8 +215,7 @@ Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_siz
 
 Skeptics query SQLite for cluster details, symbols, and blast radius.
 
-Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from
-narrative text. If a Skeptic's output is not valid JSON, apply Rule 13 (fail explicitly).
+Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from narrative text. If invalid JSON, apply Rule 13 (fail explicitly).
 
 Each finding in `findings[]` carries a `locations[]` array — one entry per file location
 that is part of the finding. Most findings have one entry; multi-location findings have
@@ -244,8 +257,7 @@ ORDER BY id;
 
 Advocates then query SQLite for cluster details and blast radius to formulate responses.
 
-Each Advocate returns a JSON object. Parse it deterministically. If an Advocate's output
-is not valid JSON, apply Rule 13.
+Each Advocate returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13.
 
 Each response in `responses[]` carries a `reads[]` array — one entry per location the
 Advocate verified. A response covering a multi-location finding will have multiple entries.
@@ -260,10 +272,9 @@ VALUES (?, ?, ?, ?, ?);
 
 Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
 
-Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture across all Skeptic/Advocate pairs. The Judge also computes and returns aggregates in a `metadata` key.
+Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture. Judge also computes and returns aggregates in a `metadata` key.
 
-The Judge returns a JSON object. Parse it deterministically. If the Judge's output is not
-valid JSON, apply Rule 13. Extract `{judge_metadata}` from the Judge's return for use in final verdict display.
+The Judge returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13. Extract `{judge_metadata}` from the return.
 
 Confirmed findings carry `location` (primary) and `additional_locations[]` (any further
 sites where the defect manifests or must be fixed). Both are used when persisting findings
