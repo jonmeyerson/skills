@@ -18,8 +18,7 @@ much as your defences.
 
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping (per-file targets)
-- `{files_changed}` — newline-separated list of changed file paths
-- `{cluster_id}` — this cluster's ID (e.g., "cluster_1"); query review_clusters to get affected files
+- `{cluster_id}` — this cluster's ID (e.g., "cluster_1"); query review_clusters to get files and symbols in this cluster
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
 - `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, review_transcript_entries
@@ -46,12 +45,8 @@ The diff is a unified diff. Parse it to identify changed files:
 - Renames appear as `similarity index` + `rename from` / `rename to`
 - Deletions show `+++ /dev/null`
 
-Use `{files_changed}` as the authoritative list of affected paths.
-
-Step 2 — Read the changed files.
-For every path in `{files_changed}`, read the full file. Do not rely on the diff alone —
-the diff lacks surrounding context. You must read the actual file before responding to any
-finding that cites it.
+Step 2 — Query cluster files and read the code.
+Query SQLite to get the files in your cluster. For each file in the cluster, read the full file. Do not rely on the diff alone — the diff lacks surrounding context. You must read the actual file before responding to any finding that cites it.
 
 Step 3 — Read the transcript.
 Retrieve only active entries:

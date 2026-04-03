@@ -211,7 +211,7 @@ WHERE review_id = ? ORDER BY c.cluster_id;
 -- bind: [review_id]
 ```
 
-Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
+Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
 
 Skeptics query SQLite for cluster details, symbols, and blast radius.
 
@@ -245,7 +245,7 @@ Parse JSON array to restore `{unreadable_files}` and pass to Judge.
 
 ### Phase 2 — Advocates (parallel)
 
-Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of `@review-tribunal-advocate` simultaneously. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
+Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of `@review-tribunal-advocate` simultaneously. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
 
 In batched mode, each Advocate receives combined findings from **all Skeptics in the current batch**. Advocates retrieve skeptic findings via SQL query:
 ```sql
@@ -270,7 +270,7 @@ VALUES (?, ?, ?, ?, ?);
 
 ### Phase 3 — Judge
 
-Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{files_changed}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
+Wait for all Advocates to complete. Invoke a single instance of `@review-tribunal-judge` using `{judge_model}`. Pass: `{overall_goal}`, `{subtask_goals}`, `{review_id}`, `{tribunal_size}`, `{round}`, `{unreadable_files}` (may be empty), `{diff_path}`, `{index_path}`.
 
 Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture. Judge also computes and returns aggregates in a `metadata` key.
 

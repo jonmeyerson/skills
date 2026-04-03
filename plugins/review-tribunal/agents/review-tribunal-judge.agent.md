@@ -20,7 +20,6 @@ without your own verification is not a ruling.
 
 - `{overall_goal}` — the review goal
 - `{subtask_goals}` — file → goal mapping (per-file targets)
-- `{files_changed}` — newline-separated list of changed file paths
 - `{diff_path}` — path to the unified diff file on disk
 - `{index_path}` — path to the index file mapping each changed file to its line number in the patch
 - `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, lsp_diagnostics, review_transcript_entries
@@ -48,11 +47,16 @@ The diff is a unified diff. Parse it to identify changed files:
 - Renames appear as `similarity index` + `rename from` / `rename to`
 - Deletions show `+++ /dev/null`
 
-Use `{files_changed}` as the authoritative list of affected paths.
+Step 2 — Query all changed files and read them.
+Query SQLite to get all files across all clusters in this review. For each file, read the full file. The diff shows what changed; the file shows what exists. You need both before ruling on anything.
 
-Step 2 — Read every changed file.
-For every path in `{files_changed}`, read the full file. The diff shows what changed;
-the file shows what exists. You need both before ruling on anything.
+```sql
+SELECT DISTINCT s.file_path FROM lsp_symbols s
+JOIN review_clusters c ON s.id = c.symbol_id
+WHERE c.review_id = ?
+ORDER BY s.file_path;
+-- bind: [review_id]
+```
 
 **LSP data for verdict verification:**
 Query this to validate Skeptic/Advocate claims with concrete impact data:
