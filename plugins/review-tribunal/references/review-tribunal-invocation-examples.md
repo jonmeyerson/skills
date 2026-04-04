@@ -37,7 +37,7 @@ Specify diff targets (branch + head). Orchestrator asks for: tribunal size, deba
 Pre-fill all parameters. Orchestrator skips configuration and proceeds directly to diff generation.
 
 ```
-@review-tribunal Compare branch feature/XYZ to develop, tribunal size 2, 2 rounds. Goal: verify the new auth middleware handles token expiry correctly. Skeptic 1 = claude-sonnet-4.6, Skeptic 2 = gpt-5.4, Advocate 1 = gpt-5.4, Advocate 2 = claude-sonnet-4.6, Judge = claude-sonnet-4.6.
+@review-tribunal Compare branch feature/XYZ to develop, tribunal size 2, 2 rounds. Goal: verify the new auth middleware handles token expiry correctly. Skeptic 1 = claude-sonnet-4.6, Skeptic 2 = gpt-5.4, Advocate 1 = gemini-2.5, Advocate 2 = gpt-5.3-codex, Judge = claude-sonnet-4.6.
 ```
 
 ---

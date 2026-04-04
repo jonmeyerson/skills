@@ -12,8 +12,8 @@
     {
       "name": "review-tribunal",
       "source": "./plugins/review-tribunal",
-      "description": "Adversarial code review plugin. Parallel Skeptics attack the implementation, parallel Advocates defend it, and a Judge rules on every finding by reading the code directly. Configurable tribunal size (1-2 pairs) with full model diversity across roles.",
-      "version": "1.0.0",
+      "description": "Adversarial code review plugin. Parallel Skeptics attack the implementation, parallel Advocates defend it, and a Judge rules on every finding by reading the code directly. Configurable tribunal size (1-3 pairs) with full model diversity across roles.",
+      "version": "1.1.1",
       "author": {
         "name": "Jonathan Meyerson",
         "url": "https://github.com/jonmeyerson"

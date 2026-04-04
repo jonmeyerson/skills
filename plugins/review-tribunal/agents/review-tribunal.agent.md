@@ -3,6 +3,7 @@ name: review-tribunal
 description: Adversarial code review orchestrator. Parallel Skeptics attack, parallel Advocates defend, Judge rules. Configurable tribunal size and model diversity.
 argument-hint: "<branch:base..head | uncommitted:branch> -- <goal>"
 user-invocable: true
+tools: ['sql', 'ask_user', 'run']
 agents: ['review-tribunal-skeptic', 'review-tribunal-advocate', 'review-tribunal-judge']
 ---
 
@@ -26,7 +27,8 @@ Phase order is strict; Phase 4a depends on Phase 4.
 **Collect configuration:**
 
 1. **Goal** (if not provided): Multi-line text field — "What should this review accomplish?"
-2. **Diff mode:** Radio — "Branch comparison" (default) | "Uncommitted changes"
+2. **Diff mode:** Radio — "Branch comparison" (default) | "Staged changes (git diff --staged)"
+   > Note: Staged changes mode reviews only changes added to the index (`git add`). Unstaged working-tree changes are not included.
 3. **Diff targets:**
    - If Branch: ask Base (default: develop) and Head (default: current branch)
    - If Uncommitted: ask Branch (default: current branch)
@@ -91,6 +93,10 @@ After collecting configuration in Step 0, define these variables for dispatch:
 - `{skeptic_models}` — array of model names assigned to skeptic slots
 - `{advocate_models}` — array of model names assigned to advocate slots
 - `{judge_model}` — model name assigned to judge
+- `{diff_source}` — string identifying the diff origin; constructed from Step 0 inputs:
+    - Branch mode: `"branch:{base}..{head}"` (e.g. `branch:develop..feature/auth`)
+    - Uncommitted mode: `"uncommitted:{branch}"` (e.g. `uncommitted:main`)
+  Set immediately after collecting diff targets in Step 0.
 
 ---
 
@@ -206,8 +212,8 @@ After Phase E, run `{debate_rounds}` rounds. Each round follows this exact seque
 
 Read all clusters from `review_clusters` table. Query to identify which cluster each symbol belongs to:
 ```sql
-SELECT DISTINCT c.cluster_id FROM review_clusters 
-WHERE review_id = ? ORDER BY c.cluster_id;
+SELECT DISTINCT c.cluster_id FROM review_clusters c
+WHERE c.review_id = ? ORDER BY c.cluster_id;
 -- bind: [review_id]
 ```
 
@@ -337,9 +343,9 @@ Derive counts directly from the parsed JSON arrays:
 
 INSERT check:
 ```sql
-INSERT INTO review_checks (review_id, check_name, round, confirmed_n, defended_n, flagged_n, confidence, passed)
-VALUES (?, 'judge-verdict', ?, ?, ?, ?, ?, ?);
--- bind: [review_id, round, confirmed_n, defended_n, flagged_n, confidence, passed]
+INSERT INTO review_checks (review_id, check_name, round, confirmed_n, defended_n, flagged_n, gap_n, struck_n, confidence, passed)
+VALUES (?, 'judge-verdict', ?, ?, ?, ?, ?, ?, ?, ?);
+-- bind: [review_id, round, confirmed_n, defended_n, flagged_n, gap_n, struck_n, confidence, passed]
 ```
 
 ### User checkpoint

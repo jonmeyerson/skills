@@ -152,8 +152,9 @@ Confidence:
 3. **Diagnostic and confidence aggregates**:
    ```sql
    SELECT COUNT(*) as total_diagnostic_n FROM lsp_diagnostics WHERE review_id = ?;
-   SELECT AVG(CAST(confidence AS FLOAT)) as final_confidence FROM review_checks 
-     WHERE review_id = ? AND check_name = 'judge-verdict';
+   SELECT confidence as final_confidence FROM review_checks
+     WHERE review_id = ? AND check_name = 'judge-verdict'
+     ORDER BY round DESC LIMIT 1;
    ```
 
 Include these in your return JSON under `metadata` key.
@@ -176,7 +177,7 @@ no markdown fences, no text before or after the JSON.
     "total_flagged_n": <integer — cumulative across all rounds>,
     "total_gap_n": <integer — cumulative across all rounds>,
     "total_diagnostic_n": <integer — count of lsp_diagnostics>,
-    "final_confidence": <float — average confidence across all judge verdicts>
+    "final_confidence": "<high | medium | low — confidence from the most recent judge verdict>"
   },
   "confirmed": [
     {
@@ -249,7 +250,7 @@ no markdown fences, no text before or after the JSON.
     "total_flagged_n": 1,
     "total_gap_n": 1,
     "total_diagnostic_n": 0,
-    "final_confidence": 0.6
+    "final_confidence": "medium"
   },
   "confirmed": [
     {

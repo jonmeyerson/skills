@@ -21,7 +21,7 @@
 
 .PARAMETER Branch
     (uncommitted mode only) Branch name — used for documentation only;
-    git diff --staged always operates on the working tree.
+    git diff --staged captures only staged (indexed) changes, not unstaged working-tree changes.
 
 .OUTPUTS
     Writes changed file paths to stdout, one per line.
