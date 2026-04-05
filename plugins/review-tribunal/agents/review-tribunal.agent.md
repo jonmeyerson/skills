@@ -27,6 +27,7 @@ Phase order is strict; Phase 4a depends on Phase 4.
 
 1. **Goal** (if not provided): Multi-line text field — "What should this review accomplish?"
 2. **Diff mode:** Radio — "Branch comparison" (default) | "Staged changes (git diff --staged)"
+   > After collecting Goal, derive the candidate `review_id` slug and check whether it already exists in `review_runs` with `status = 'running'`. If it does, ask the user: "A review with this ID is already in progress. Resume it (start from round N+1) or restart from scratch?" Resuming restores `{round}` from `MAX(round) FROM review_checks` and skips Steps 0–1 entirely.
    > Note: Staged changes mode reviews only changes added to the index (`git add`). Unstaged working-tree changes are not included.
 3. **Diff targets:**
    - If Branch: ask Base (default: develop) and Head (default: current branch)
@@ -34,6 +35,7 @@ Phase order is strict; Phase 4a depends on Phase 4.
    - If Staged: ask Branch (default: current branch)
 4. **Tribunal size:** Radio — 1 (default) | 2 | 3
 5. **Starting debate rounds:** Text field (default: 1, accepts any positive integer)
+6. **Exclusion patterns** (optional): Text field — "Glob patterns for files to exclude from blast radius (comma-separated, e.g. `vendor/**,*.auto.ts`)". Defaults to `*.generated.*,*.designer.*,*.g.cs,*_pb2.py`.
 
 **Phase 4 — Model assignments** (slots determined by `{tribunal_size}`):
 
@@ -57,7 +59,7 @@ If user violates provider uniqueness within a role, re-prompt only the conflicti
 
 ## review_id resolution
 
-Generate a slug from `{goal}` (lowercase, hyphens, max 40 chars). Check for collision:
+Generate a slug from `{goal}` using this exact algorithm: lowercase the goal; replace any run of characters outside `[a-z0-9]` with a single hyphen; collapse consecutive hyphens; strip leading and trailing hyphens; truncate to 40 characters; strip any trailing hyphen introduced by truncation. Check for collision:
 
 ```sql
 SELECT review_id FROM review_runs WHERE review_id = ?;
@@ -72,7 +74,7 @@ If exists, auto-suffix (`-2`, `-3`...) until unique.
 
 ## Schema
 
-Load [review-tribunal-schema.md](../references/review-tribunal-schema.md) and execute all `CREATE TABLE IF NOT EXISTS` statements before any other SQL. This runs once at startup — if tables already exist, it is a no-op.
+Load [review-tribunal-schema.md](../references/review-tribunal-schema.md) and execute `PRAGMA foreign_keys = ON;` followed by all `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` statements before any other SQL. This runs once at startup — if tables already exist, it is a no-op.
 
 ---
 
@@ -94,6 +96,8 @@ After collecting configuration in Step 0, define these variables for dispatch:
 - `{judge_model}` — model name assigned to judge
 - `{round}` — current debate round number; starts at 1, incremented at each "Run another round" checkpoint
 - `{unscoped_files}` — list of files with no LSP server coverage (set in Phase A); surfaced to user in Phase A prompt; not passed to subagents (unscoped files do not appear in lsp_symbols or review_clusters)
+- `{exclusion_patterns}` — comma-separated glob patterns for files to exclude from blast radius (from Step 0, question 6)
+- `{struck_findings}` — brief summary of findings the Judge has ruled Struck in prior rounds (empty on round 1); passed to Skeptics to prevent re-raising factually disproved findings
 - `{diff_source}` — string identifying the diff origin; constructed from Step 0 inputs:
     - Branch mode: `"branch:{base}..{head}"` (e.g. `branch:develop..feature/auth`)
     - Staged mode: `"uncommitted:{branch}"` (e.g. `uncommitted:main`)
@@ -105,11 +109,11 @@ After collecting configuration in Step 0, define these variables for dispatch:
 
 All review files are written to `{session_store}/files/`.
 
-Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) with:
-- **Branch mode**: `-Mode branch -Base {base} -Head {head}`
-- **Staged mode**: `-Mode uncommitted -Branch {branch}`
+Run the diff script appropriate for the current OS:
+- **PowerShell (Windows):** [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) — `-Mode branch -Base {base} -Head {head} -OutputPath "..."` or `-Mode uncommitted -Branch {branch} -OutputPath "..."`
+- **Bash (macOS/Linux):** [review-patch.sh](../scripts/review-patch.sh) — `-m branch -b {base} -h {head} -o "..."` or `-m uncommitted -B {branch} -o "..."`
 
-Always set `-OutputPath "{session_store}/files/review-{review_id}.patch"`.
+Always set the output path to `"{session_store}/files/review-{review_id}.patch"`.
 
 Capture stdout as `{files_changed}` (newline-separated file paths). If non-zero exit, apply Rule 9.
 
@@ -117,12 +121,20 @@ If `{files_changed}` is empty: output `No changes detected between the specified
 
 Set `{diff_path}` = `{session_store}/files/review-{review_id}.patch`
 
-After the patch is written, run [ReviewIndex.ps1](../scripts/ReviewIndex.ps1) to generate the index file:
+After the patch is written, run the index script appropriate for the current OS:
 
+**PowerShell:**
 ```powershell
 & ReviewIndex.ps1 `
     -PatchPath  "{session_store}/files/review-{review_id}.patch" `
     -OutputPath "{session_store}/files/review-{review_id}.index"
+```
+
+**Bash:**
+```bash
+review-index.sh \
+    -p "{session_store}/files/review-{review_id}.patch" \
+    -o "{session_store}/files/review-{review_id}.index"
 ```
 
 If the script exits non-zero, apply Rule 9.
@@ -152,8 +164,8 @@ INSERT INTO review_runs (
 
 INSERT transcript header:
 ```sql
-INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
-VALUES (?, 0, 'orchestrator', 'n/a', ?);
+INSERT INTO review_transcript_entries (review_id, round, agent, model, cluster_id, content)
+VALUES (?, 0, 'orchestrator', 'n/a', NULL, ?);
 -- bind: [review_id,
 --        'REVIEW TRIBUNAL | Diff: {diff_path} | Goal: {goal} | review_id: {review_id} | Size: {tribunal_size} | Starting rounds: {debate_rounds}']
 ```
@@ -162,6 +174,7 @@ VALUES (?, 0, 'orchestrator', 'n/a', ?);
 - If caller provides explicit JSON mapping (`{file_path: goal_string}`), use it per file.
 - Any file not in explicit mapping defaults to `{goal}`.
 - If caller mapping is invalid JSON or contains unknown file paths, report error and stop.
+- After applying the mapping, report any files in `{files_changed}` that fell back to the default goal because no explicit mapping key matched them (warn the user so they can correct typos). Give the user the option to update the mapping or proceed with defaults.
 
 This allows fine-grained review targets: test files get "write tests", service files get "error handling", etc.
 
@@ -185,7 +198,7 @@ Pre-confirmed issues skip debate loop. Display in final verdict under DIAGNOSTIC
 
 **Phase C — Extract changed symbols (pipelined, pool 5–10)**
 
-For each LSP-covered file: issue `documentSymbol` request. Parse response → extract (symbol_name, symbol_type, namespace, line_start, line_end, file_path). Cross-reference with diff hunks; discard unchanged. Deduplicate by `(symbol_name, symbol_type, namespace)` → store primary file:
+For each LSP-covered file: issue `documentSymbol` request. Parse response → extract (symbol_name, symbol_type, namespace, line_start, line_end, file_path). Cross-reference with diff hunks; discard unchanged. Deduplicate within each file by `(symbol_name, symbol_type, namespace)`. Apply cross-file deduplication only when `namespace IS NOT NULL` — symbols with `namespace IS NULL` must never be merged across files, as the same name may identify different symbols in different files. Store one row per unique `(file_path, symbol_name, symbol_type, namespace)` combination:
 ```sql
 INSERT INTO lsp_symbols (review_id, file_path, symbol_name, symbol_type, namespace, line_start, line_end)
 VALUES (?, ?, ?, ?, ?, ?, ?);
@@ -193,7 +206,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?);
 
 **Phase D — Build blast radius (pipelined, pool 10–20)**
 
-For each symbol, parallel issue 4 LSP calls: incomingCalls (up_to_2_hops), outgoingCalls, supertypes, subtypes. Collect results, extract (target_symbol, target_file, distance_hop, call_type). Exclude generated files. Deduplicate by `(target_symbol, target_file, call_type)`:
+For each symbol, parallel issue 4 LSP calls: incomingCalls (up_to_2_hops), outgoingCalls, supertypes, subtypes. Collect results, extract (target_symbol, target_file, distance_hop, call_type). Exclude files matching `{exclusion_patterns}` (parse as comma-separated globs). Deduplicate by `(target_symbol, target_file, call_type)`:
 ```sql
 INSERT INTO lsp_blast_radius (review_id, symbol_id, call_type, target_symbol, target_file, distance, namespace)
 VALUES (?, ?, ?, ?, ?, ?, ?);
@@ -222,7 +235,16 @@ WHERE c.review_id = ? ORDER BY c.cluster_id;
 -- bind: [review_id]
 ```
 
-Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`.
+Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_size}` in parallel. Queue remaining clusters in batches. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `skeptic_1`), `{round}`, `{struck_findings}`.
+
+Before dispatching Skeptics on round 2+, build `{struck_findings}` by querying:
+```sql
+SELECT rf.issue, rf.location FROM review_findings rf
+WHERE rf.review_id = ? AND rf.verdict = 'Struck'
+ORDER BY rf.round, rf.finding_n;
+-- bind: [review_id]
+```
+Format as a brief list: `"[file:line] issue_summary"` per entry. Pass to Skeptics so they do not re-raise findings the Judge already disproved. On round 1, `{struck_findings}` is an empty list.
 
 Skeptics query SQLite for cluster details, symbols, and blast radius.
 
@@ -232,11 +254,14 @@ Each finding in `findings[]` carries a `locations[]` array — one entry per fil
 that is part of the finding. Most findings have one entry; multi-location findings have
 more. Extract all locations when building dispatch briefs for subsequent phases.
 
-INSERT each Skeptic's raw JSON output as it completes:
+INSERT each Skeptic's raw JSON output as it completes (set `cluster_id` to the cluster this Skeptic was assigned):
 ```sql
-INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO review_transcript_entries (review_id, round, agent, model, cluster_id, content)
+VALUES (?, ?, ?, ?, ?, ?);
+-- bind: [review_id, round, instance, model, cluster_id, output_json]
 ```
+
+**Short-circuit check:** After all Skeptics in the round have completed, check whether every Skeptic returned an empty `findings[]` array (or `no_changes: true`). If so, skip Phases 2 and 3, insert a `review_checks` row with all counts = 0 and `passed = 1`, and proceed directly to the user checkpoint — surface "No findings this round."
 
 After all Skeptics complete, collect all `unreadable[]` entries across every Skeptic output.
 Deduplicate by path and store as `{unreadable_files}` for checkpoint display and Judge dispatch. 
@@ -258,12 +283,12 @@ Parse JSON array to restore `{unreadable_files}` and pass to Judge.
 
 Wait for all Skeptics to complete. Invoke `{tribunal_size}` instances of `@review-tribunal-advocate` simultaneously. Each instance receives: `{overall_goal}`, `{subtask_goals}`, `{cluster_id}`, `{diff_path}`, `{index_path}`, `{review_id}`, `{instance}` (e.g. `advocate_1`), `{round}`.
 
-In batched mode, each Advocate receives combined findings from **all Skeptics in the current batch**. Advocates retrieve skeptic findings via SQL query:
+Each Advocate retrieves skeptic findings for its own assigned cluster only:
 ```sql
 SELECT id, agent, model, round, content FROM review_transcript_entries
-WHERE review_id = ? AND agent LIKE 'skeptic_%' AND round = ? AND status = 'active'
+WHERE review_id = ? AND agent LIKE 'skeptic_%' AND round = ? AND cluster_id = ? AND status = 'active'
 ORDER BY id;
--- bind: [review_id, round]
+-- bind: [review_id, round, cluster_id]
 ```
 
 Advocates then query SQLite for cluster details and blast radius to formulate responses.
@@ -273,10 +298,11 @@ Each Advocate returns a JSON object. Parse it deterministically. If invalid JSON
 Each response in `responses[]` carries a `reads[]` array — one entry per location the
 Advocate verified. A response covering a multi-location finding will have multiple entries.
 
-INSERT each Advocate's raw JSON output as it completes:
+INSERT each Advocate's raw JSON output as it completes (set `cluster_id` to the cluster this Advocate was assigned):
 ```sql
-INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO review_transcript_entries (review_id, round, agent, model, cluster_id, content)
+VALUES (?, ?, ?, ?, ?, ?);
+-- bind: [review_id, round, instance, model, cluster_id, output_json]
 ```
 
 ### Phase 3 — Judge
@@ -293,8 +319,8 @@ and when displaying results to the user.
 
 INSERT Judge raw JSON output:
 ```sql
-INSERT INTO review_transcript_entries (review_id, round, agent, model, content)
-VALUES (?, ?, 'judge', ?, ?);
+INSERT INTO review_transcript_entries (review_id, round, agent, model, cluster_id, content)
+VALUES (?, ?, 'judge', ?, NULL, ?);
 -- bind: [review_id, round, judge_model, output_json]
 ```
 
@@ -401,8 +427,10 @@ DIAGNOSTIC ISSUES (Pre-confirmed — skipped debate):
 - **Radio — Continue?**
   - "Stop — surface final verdict" (default)
   - "Run another round"
+  - "Run another round and retry unreadable files" (shown only if `{unreadable_files}` is non-empty)
 
 If "Run another round": increment `{round}`, return to Step 2.
+If "Run another round and retry unreadable files": clear `unreadable_files_json` in the database (`UPDATE review_runs SET unreadable_files_json = NULL WHERE review_id = ?`), reset `{unreadable_files}` to empty, increment `{round}`, return to Step 2. Skeptics will attempt to read the previously-unreadable files; those still inaccessible will be re-added to `unreadable_files_json` by Round 2 Skeptics.
 If "Stop": proceed to Step 4.
 
 ---
@@ -418,7 +446,10 @@ Extract final aggregates from Judge's `metadata`:
 - `{final_confidence}` = `judge_metadata.final_confidence`
 - `{total_rounds}` = highest round number from the debate loop
 
-Determine final status: set to `'confirmed'` if `total_confirmed_n > 0` or `total_flagged_n > 0`; otherwise set to `'clean'`.
+Determine final status:
+- `'confirmed'` if `total_confirmed_n > 0`
+- `'flagged'` if `total_confirmed_n == 0` and `total_flagged_n > 0`
+- `'clean'` if both are 0
 
 UPDATE run status:
 ```sql

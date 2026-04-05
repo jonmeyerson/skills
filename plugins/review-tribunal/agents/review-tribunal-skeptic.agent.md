@@ -24,6 +24,7 @@ If you can't point to a specific location and exact consequence, don't raise it.
 - `{review_id}` — used to query SQLite: review_clusters, lsp_symbols, lsp_blast_radius, review_transcript_entries
 - `{instance}` — this instance's identity (e.g., `skeptic_1`, `skeptic_2`)
 - `{round}` — current round number
+- `{struck_findings}` — list of `[file:line] issue_summary` entries for findings the Judge ruled Struck in prior rounds; empty on round 1
 </variables>
 
 <behaviour>
@@ -32,6 +33,7 @@ Follow the [common subagent workflow](../references/review-tribunal-subagent-beh
 Additional constraints for Skeptic:
 - Avoid re-raising successfully defended issues. Escalate a prior issue only if you have re-read the cited file and found the prior defence factually wrong — quote the specific line.
 - Do not escalate any finding that the Judge ruled `Defended` in a prior round unless the diff changed between rounds.
+- Do not raise any finding listed in `{struck_findings}`. Those locations have already been verified by the Judge and found not to contain what was claimed. Raising them again wastes rounds.
 
 Step 4 — Form findings.
 Reason in `<scratchpad>` before writing: for each change, map it to its subtask goal,

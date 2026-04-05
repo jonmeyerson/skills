@@ -99,7 +99,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Err "git $($diffArgs -join ' ') failed (exit $LASTEXITCODE)"
 }
 
-[System.IO.File]::WriteAllText($OutputPath, ($patch -join "`n"), [System.Text.Encoding]::UTF8)
+$normalized = $patch | ForEach-Object { $_.TrimEnd("`r") }
+[System.IO.File]::WriteAllText($OutputPath, ($normalized -join "`n"), [System.Text.Encoding]::UTF8)
 
 Write-Progress -Activity "ReviewPatch" -Completed -Status "Done"
 

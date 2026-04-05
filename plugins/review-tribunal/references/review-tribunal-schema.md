@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS review_runs (
     skeptic_models     TEXT NOT NULL,   -- JSON array
     advocate_models    TEXT NOT NULL,   -- JSON array
     judge_model        TEXT NOT NULL,
-    status             TEXT NOT NULL CHECK(status IN ('running', 'confirmed', 'clean')),
+    status             TEXT NOT NULL CHECK(status IN ('running', 'confirmed', 'flagged', 'clean')),
     unreadable_files_json TEXT,         -- JSON array of file paths that could not be read (consistent across rounds)
     ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -38,10 +38,12 @@ CREATE TABLE IF NOT EXISTS review_transcript_entries (
     round              INTEGER NOT NULL,   -- 0 = header
     agent              TEXT    NOT NULL,   -- 'orchestrator' | 'skeptic_1'..'skeptic_N' | 'advocate_1'..'advocate_N' | 'judge'
     model              TEXT    NOT NULL,
+    cluster_id         TEXT,               -- cluster this entry belongs to; NULL for orchestrator and judge entries
     status             TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'struck')),
     struck_reason      TEXT,              -- NULL unless status = 'struck'
     content            TEXT    NOT NULL,
-    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
+    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (review_id) REFERENCES review_runs(review_id)
 );
 ```
 
@@ -65,7 +67,8 @@ CREATE TABLE IF NOT EXISTS review_checks (
     struck_n           INTEGER,              -- count of struck findings this round
     confidence         TEXT,                 -- judge's confidence level this round
     passed             INTEGER NOT NULL CHECK(passed IN (0, 1)),  -- 1 if no confirmed, 0 otherwise
-    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
+    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (review_id) REFERENCES review_runs(review_id)
 );
 ```
 
@@ -84,7 +87,8 @@ CREATE TABLE IF NOT EXISTS review_findings (
     fix                  TEXT,
     location             TEXT,
     additional_locations TEXT,              -- JSON array of strings; NULL if none
-    ts                   DATETIME DEFAULT CURRENT_TIMESTAMP
+    ts                   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (review_id) REFERENCES review_runs(review_id)
 );
 ```
 
@@ -102,13 +106,14 @@ CREATE TABLE IF NOT EXISTS lsp_diagnostics (
     severity           TEXT    NOT NULL CHECK(severity IN ('error', 'warning', 'info')),
     message            TEXT    NOT NULL,
     diagnostic_code    TEXT,
-    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
+    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (review_id) REFERENCES review_runs(review_id)
 );
 ```
 
 ### lsp_symbols
 
-Changed symbols extracted in Phase C via `textDocument/documentSymbol`. Each symbol per file (no cross-file deduplication).
+Changed symbols extracted in Phase C via `textDocument/documentSymbol`. Deduplicated within each file by `(symbol_name, symbol_type, namespace)`. Cross-file deduplication is applied only when `namespace IS NOT NULL`; symbols with `namespace IS NULL` are never merged across files.
 
 ```sql
 CREATE TABLE IF NOT EXISTS lsp_symbols (
@@ -120,7 +125,8 @@ CREATE TABLE IF NOT EXISTS lsp_symbols (
     namespace          TEXT,               -- qualified name if available (e.g., "com.example.Class" for Java)
     line_start         INTEGER NOT NULL,
     line_end           INTEGER,
-    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP
+    ts                 DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (review_id) REFERENCES review_runs(review_id)
 );
 ```
 
@@ -139,7 +145,8 @@ CREATE TABLE IF NOT EXISTS lsp_blast_radius (
     distance           INTEGER NOT NULL,  -- hop count (1 or 2)
     namespace          TEXT,               -- target symbol's namespace if available
     ts                 DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (symbol_id) REFERENCES lsp_symbols(id)
+    FOREIGN KEY (symbol_id) REFERENCES lsp_symbols(id),
+    FOREIGN KEY (review_id) REFERENCES review_runs(review_id)
 );
 ```
 
@@ -154,10 +161,25 @@ CREATE TABLE IF NOT EXISTS review_clusters (
     cluster_id  TEXT    NOT NULL,
     symbol_id   INTEGER NOT NULL,  -- Foreign key: references lsp_symbols(id)
     ts          DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (symbol_id) REFERENCES lsp_symbols(id)
+    FOREIGN KEY (symbol_id) REFERENCES lsp_symbols(id),
+    FOREIGN KEY (review_id) REFERENCES review_runs(review_id)
 );
+```
+
+## Indexes
+
+Add these after the `CREATE TABLE` statements. They cover the most common query patterns.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_transcript_lookup  ON review_transcript_entries(review_id, round, status);
+CREATE INDEX IF NOT EXISTS idx_findings_review    ON review_findings(review_id);
+CREATE INDEX IF NOT EXISTS idx_clusters_lookup    ON review_clusters(review_id, cluster_id);
+CREATE INDEX IF NOT EXISTS idx_blast_radius_sym   ON lsp_blast_radius(symbol_id);
+CREATE INDEX IF NOT EXISTS idx_symbols_review     ON lsp_symbols(review_id);
 ```
 
 ## Initialization
 
-The orchestrator auto-creates these tables on first run if they don't exist. If tables already exist, no re-initialization occurs.
+The orchestrator auto-creates these tables on first run if they don't exist. If tables already exist, it is a no-op.
+
+Issue `PRAGMA foreign_keys = ON;` once per connection before any DML to enable FK enforcement (SQLite disables it by default).
