@@ -172,7 +172,7 @@ Always execute the full LSP scoping workflow before debate rounds. Use pipelined
 
 **Phase A — Discover and start LSP servers**
 
-Use `lsp-config` to find language servers for file extensions in `{files_changed}`. Start each. Files without LSP coverage go to `{unscoped_files}` (passed as full context to all dispatches). If unscoped files exist, ask user whether to proceed or install additional servers.
+Use `lsp-config` to find language servers for file extensions in `{files_changed}`. Start each. Files without LSP coverage go to `{unscoped_files}`. If unscoped files exist, ask user whether to proceed or install additional servers.
 
 **Phase B — Collect diagnostics (pre-confirmed issues)**
 
