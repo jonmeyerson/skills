@@ -31,8 +31,8 @@ Phase order is strict; Phase 4a depends on Phase 4.
    > Note: Staged changes mode reviews only changes added to the index (`git add`). Unstaged working-tree changes are not included.
 3. **Diff targets:**
    - If Branch: ask Base (default: develop) and Head (default: current branch)
+       - Validate: If base == head, re-prompt once. If still equal, stop.
    - If Staged: ask Branch (default: current branch)
-   - Validate: If base == head, re-prompt once. If still equal, stop.
 4. **Tribunal size:** Radio — 1 (default) | 2 | 3
 5. **Starting debate rounds:** Text field (default: 1, accepts any positive integer)
 
@@ -93,6 +93,8 @@ After collecting configuration in Step 0, define these variables for dispatch:
 - `{skeptic_models}` — array of model names assigned to skeptic slots
 - `{advocate_models}` — array of model names assigned to advocate slots
 - `{judge_model}` — model name assigned to judge
+- `{round}` — current debate round number; starts at 1, incremented at each "Run another round" checkpoint
+- `{unscoped_files}` — list of files with no LSP server coverage (set in Phase A); passed as full context to all subagent dispatches
 - `{diff_source}` — string identifying the diff origin; constructed from Step 0 inputs:
     - Branch mode: `"branch:{base}..{head}"` (e.g. `branch:develop..feature/auth`)
     - Staged mode: `"uncommitted:{branch}"` (e.g. `uncommitted:main`)
@@ -299,8 +301,10 @@ Parse `verdict.struck` from the Judge's JSON. For each entry, update transcript 
 
 ```sql
 UPDATE review_transcript_entries SET status = 'struck', struck_reason = ? WHERE id = ?;
+-- bind: [struck.reason, struck.entry_id]
 INSERT INTO review_findings (review_id, round, finding_n, verdict, issue, location)
 VALUES (?, ?, ?, 'Struck', ?, NULL);
+-- bind: [review_id, round, struck.n, struck.issue]
 ```
 
 In subsequent rounds, subagents retrieve only `status = 'active'` transcript entries, naturally filtering out struck findings.
