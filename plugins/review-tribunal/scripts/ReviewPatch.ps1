@@ -81,9 +81,9 @@ $nameArgs = switch ($Mode) {
     'uncommitted' { @('diff', '--staged', '--name-only') }
 }
 
-$changedFiles = git @nameArgs 2>&1
+$changedFiles = git @nameArgs
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "git $($nameArgs -join ' ') failed (exit $LASTEXITCODE): $changedFiles"
+    Write-Err "git $($nameArgs -join ' ') failed (exit $LASTEXITCODE)"
 }
 
 # --- Write patch ---
@@ -94,9 +94,9 @@ $diffArgs = switch ($Mode) {
     'uncommitted' { @('diff', '--staged') }
 }
 
-$patch = git @diffArgs 2>&1
+$patch = git @diffArgs
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "git $($diffArgs -join ' ') failed (exit $LASTEXITCODE): $patch"
+    Write-Err "git $($diffArgs -join ' ') failed (exit $LASTEXITCODE)"
 }
 
 [System.IO.File]::WriteAllText($OutputPath, ($patch -join "`n"), [System.Text.Encoding]::UTF8)

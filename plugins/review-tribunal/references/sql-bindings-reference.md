@@ -78,9 +78,3 @@ SELECT COUNT(*) as total_rounds FROM review_checks WHERE review_id = ?;
 -- bind: [review_id]
 ```
 
-### Average aggregations
-```sql
-SELECT AVG(CAST(confidence AS FLOAT)) as final_confidence
-FROM review_checks WHERE review_id = ? AND check_name = 'judge-verdict';
--- bind: [review_id]
-```

@@ -95,7 +95,7 @@ After collecting configuration in Step 0, define these variables for dispatch:
 - `{judge_model}` — model name assigned to judge
 - `{diff_source}` — string identifying the diff origin; constructed from Step 0 inputs:
     - Branch mode: `"branch:{base}..{head}"` (e.g. `branch:develop..feature/auth`)
-    - Uncommitted mode: `"uncommitted:{branch}"` (e.g. `uncommitted:main`)
+    - Staged mode: `"uncommitted:{branch}"` (e.g. `uncommitted:main`)
   Set immediately after collecting diff targets in Step 0.
 
 ---

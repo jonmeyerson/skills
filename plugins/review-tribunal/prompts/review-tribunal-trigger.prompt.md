@@ -15,10 +15,10 @@ The Review Tribunal accepts argument hints to streamline initialization:
 
 | Component | Format | Example |
 |---|---|---|
-| Diff source (uncommitted) | `uncommitted:branch` | `uncommitted:main` |
+| Diff source (staged) | `uncommitted:branch` | `uncommitted:main` |
 | Diff source (branch compare) | `branch:base..head` | `branch:develop..feature/XYZ` |
 | Review goal | text after `--` | `verify error handling in the API client` |
 
 The orchestrator parses these automatically and asks for remaining configuration (tribunal size, debate rounds, model assignments).
 
-See [Quick-Start Examples](../references/review-tribunal-quick-start.md) for invocation patterns.
+See [Invocation Examples](../references/review-tribunal-invocation-examples.md) for invocation patterns.

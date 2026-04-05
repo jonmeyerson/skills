@@ -16,7 +16,7 @@ Status: {status}
 
 ## Diagnostic Issues ({total_diagnostic_n})
 
-{For each diagnostic error from diagnostics_path:
+{For each diagnostic error from lsp_diagnostics:
 ### {file}, line {line}
 {message}
 }
@@ -73,7 +73,7 @@ Files: {files}
 
 ### Diagnostic Issues
 
-Pre-confirmed issues from LSP diagnostics (if ≥5000 line diff). These skip the debate loop.
+Pre-confirmed issues from LSP diagnostics. These skip the debate loop.
 
 ### Confirmed Issues
 
