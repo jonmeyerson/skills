@@ -110,7 +110,7 @@ Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) with:
 
 Always set `-OutputPath "{session_store}/files/review-{review_id}.patch"`.
 
-Capture stdout as `{files_changed}` (newline-separated file paths). If non-zero exit, apply Rule 13.
+Capture stdout as `{files_changed}` (newline-separated file paths). If non-zero exit, apply Rule 9.
 
 If `{files_changed}` is empty: output `No changes detected between the specified sources.` and stop.
 
@@ -124,7 +124,7 @@ After the patch is written, run [ReviewIndex.ps1](../scripts/ReviewIndex.ps1) to
     -OutputPath "{session_store}/files/review-{review_id}.index"
 ```
 
-If the script exits non-zero, apply Rule 13.
+If the script exits non-zero, apply Rule 9.
 
 The index format is one entry per changed file:
 ```
@@ -221,7 +221,7 @@ Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_siz
 
 Skeptics query SQLite for cluster details, symbols, and blast radius.
 
-Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from narrative text. If invalid JSON, apply Rule 13 (fail explicitly).
+Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from narrative text. If invalid JSON, apply Rule 9 (fail explicitly).
 
 Each finding in `findings[]` carries a `locations[]` array — one entry per file location
 that is part of the finding. Most findings have one entry; multi-location findings have
@@ -263,7 +263,7 @@ ORDER BY id;
 
 Advocates then query SQLite for cluster details and blast radius to formulate responses.
 
-Each Advocate returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13.
+Each Advocate returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 9.
 
 Each response in `responses[]` carries a `reads[]` array — one entry per location the
 Advocate verified. A response covering a multi-location finding will have multiple entries.
@@ -280,7 +280,7 @@ Wait for all Advocates to complete. Invoke a single instance of `@review-tribuna
 
 Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture. Judge also computes and returns aggregates in a `metadata` key.
 
-The Judge returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13. Extract `{judge_metadata}` from the return.
+The Judge returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 9. Extract `{judge_metadata}` from the return.
 
 Confirmed findings carry `location` (primary) and `additional_locations[]` (any further
 sites where the defect manifests or must be fixed). Both are used when persisting findings
@@ -482,4 +482,3 @@ The tool supports the following widget types — compose them to fit the decisio
 | 10 | Stuck State | If unexpected state arises, report and stop; don't spin |
 | 11 | JSON Parsing | Parse JSON deterministically; never infer values from narrative text |
 | 12 | User Input | Always use ask_user; never ask user to run commands |
-| 13 | Script Failure | If ReviewPatch.ps1 or ReviewIndex.ps1 exits non-zero, report the exit code and captured output verbatim, then stop. Do not proceed to diff generation or debate. |
