@@ -3,7 +3,6 @@ name: review-tribunal
 description: Adversarial code review orchestrator. Parallel Skeptics attack, parallel Advocates defend, Judge rules. Configurable tribunal size and model diversity.
 argument-hint: "<branch:base..head | uncommitted:branch> -- <goal>"
 user-invocable: true
-tools: ['sql', 'ask_user', 'run']
 agents: ['review-tribunal-skeptic', 'review-tribunal-advocate', 'review-tribunal-judge']
 ---
 
