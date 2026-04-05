@@ -46,7 +46,7 @@ Pre-fill all parameters. Orchestrator skips configuration and proceeds directly 
 
 | Component | Format | Purpose |
 |-----------|--------|---------|
-| Diff source (uncommitted) | `uncommitted:branch` | Compare working changes to branch HEAD |
+| Diff source (staged) | `uncommitted:branch` | Compare staged (indexed) changes to branch HEAD |
 | Diff source (branch) | `branch:base..head` | Compare two branches |
 | Goal | text after `--` | Focus the review on a specific objective |
 

@@ -73,4 +73,4 @@ Write-Progress -Activity "ReviewIndex" -Status "Writing index ($($entries.Count)
 
 Write-Progress -Activity "ReviewIndex" -Completed -Status "Done"
 
-Write-Error "Index written: $OutputPath ($($entries.Count) file(s) indexed)" -ErrorAction Continue
+[Console]::Error.WriteLine("Index written: $OutputPath ($($entries.Count) file(s) indexed)")

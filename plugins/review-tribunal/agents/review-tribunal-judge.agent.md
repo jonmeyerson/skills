@@ -152,10 +152,8 @@ Confidence:
 3. **Diagnostic and confidence aggregates**:
    ```sql
    SELECT COUNT(*) as total_diagnostic_n FROM lsp_diagnostics WHERE review_id = ?;
-   SELECT confidence as final_confidence FROM review_checks
-     WHERE review_id = ? AND check_name = 'judge-verdict'
-     ORDER BY round DESC LIMIT 1;
    ```
+   Set `final_confidence` = your top-level `confidence` field value, lowercased (e.g. `"High"` → `"high"`). No query needed — the current round's confidence is always the most recent.
 
 Include these in your return JSON under `metadata` key.
 

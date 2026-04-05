@@ -31,7 +31,7 @@ Phase order is strict; Phase 4a depends on Phase 4.
    > Note: Staged changes mode reviews only changes added to the index (`git add`). Unstaged working-tree changes are not included.
 3. **Diff targets:**
    - If Branch: ask Base (default: develop) and Head (default: current branch)
-   - If Uncommitted: ask Branch (default: current branch)
+   - If Staged: ask Branch (default: current branch)
    - Validate: If base == head, re-prompt once. If still equal, stop.
 4. **Tribunal size:** Radio — 1 (default) | 2 | 3
 5. **Starting debate rounds:** Text field (default: 1, accepts any positive integer)
@@ -106,7 +106,7 @@ All review files are written to `{session_store}/files/`.
 
 Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) with:
 - **Branch mode**: `-Mode branch -Base {base} -Head {head}`
-- **Uncommitted mode**: `-Mode uncommitted -Branch {branch}`
+- **Staged mode**: `-Mode uncommitted -Branch {branch}`
 
 Always set `-OutputPath "{session_store}/files/review-{review_id}.patch"`.
 
@@ -482,3 +482,4 @@ The tool supports the following widget types — compose them to fit the decisio
 | 10 | Stuck State | If unexpected state arises, report and stop; don't spin |
 | 11 | JSON Parsing | Parse JSON deterministically; never infer values from narrative text |
 | 12 | User Input | Always use ask_user; never ask user to run commands |
+| 13 | Script Failure | If ReviewPatch.ps1 or ReviewIndex.ps1 exits non-zero, report the exit code and captured output verbatim, then stop. Do not proceed to diff generation or debate. |
