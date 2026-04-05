@@ -58,7 +58,7 @@ Files: {files}
 |----------|-------------|---------|
 | `{review_id}` | Unique tribunal session ID | `review_abc123def` |
 | `{goal}` | User's specified review goal | `verify error handling in API client` |
-| `{diff_source}` | Branch or uncommitted diff reference | `branch:develop..feature/auth` |
+| `{diff_source}` | Branch or staged diff reference | `branch:develop..feature/auth` |
 | `{tribunal_size}` | Number of skeptic/advocate pairs | `2` |
 | `{total_rounds}` | Number of debate rounds executed | `3` |
 | `{final_confidence}` | Overall confidence level | `high`, `medium`, `low` |

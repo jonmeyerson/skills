@@ -13,7 +13,7 @@ Adversarial code review plugin. Parallel Skeptics attack the implementation, par
 
 ## What it does
 
-- Accepts a branch comparison or uncommitted diff as input
+- Accepts a branch comparison or staged diff (git diff --staged) as input
 - Runs one or more debate rounds: Skeptics find defects, Advocates respond, Judge rules
 - Uses LSP to scope review to changed symbols and their blast radius, clustering for efficiency
 - Emits fix prompts for every confirmed issue; surfaces flags requiring human judgment
@@ -546,7 +546,7 @@ Arguments parsed from the invocation string:
 | Argument | Format | Example |
 |---|---|---|
 | Branch comparison | `branch:base..head` | `branch:develop..feature/XYZ` |
-| Uncommitted diff | `uncommitted:branch` | `uncommitted:feature/XYZ` |
+| Staged diff | `uncommitted:branch` | `uncommitted:feature/XYZ` |
 | Goal | free text after `--` | `verify auth middleware handles token expiry` |
 
 Any arguments not supplied in the invocation string are collected interactively via
