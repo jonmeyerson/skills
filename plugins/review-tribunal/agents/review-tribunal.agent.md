@@ -94,7 +94,7 @@ After collecting configuration in Step 0, define these variables for dispatch:
 - `{advocate_models}` — array of model names assigned to advocate slots
 - `{judge_model}` — model name assigned to judge
 - `{round}` — current debate round number; starts at 1, incremented at each "Run another round" checkpoint
-- `{unscoped_files}` — list of files with no LSP server coverage (set in Phase A); passed as full context to all subagent dispatches
+- `{unscoped_files}` — list of files with no LSP server coverage (set in Phase A); surfaced to user in Phase A prompt; not passed to subagents (unscoped files do not appear in lsp_symbols or review_clusters)
 - `{diff_source}` — string identifying the diff origin; constructed from Step 0 inputs:
     - Branch mode: `"branch:{base}..{head}"` (e.g. `branch:develop..feature/auth`)
     - Staged mode: `"uncommitted:{branch}"` (e.g. `uncommitted:main`)
