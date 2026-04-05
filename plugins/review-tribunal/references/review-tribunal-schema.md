@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS review_checks (
     confirmed_n        INTEGER,              -- count of confirmed findings this round
     defended_n         INTEGER,              -- count of defended findings this round
     flagged_n          INTEGER,              -- count of flagged findings this round
+    gap_n              INTEGER,              -- count of gap findings this round
+    struck_n           INTEGER,              -- count of struck findings this round
     confidence         TEXT,                 -- judge's confidence level this round
     passed             INTEGER NOT NULL CHECK(passed IN (0, 1)),  -- 1 if no confirmed, 0 otherwise
     ts                 DATETIME DEFAULT CURRENT_TIMESTAMP

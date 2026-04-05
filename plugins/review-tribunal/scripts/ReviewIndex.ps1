@@ -73,4 +73,4 @@ Write-Progress -Activity "ReviewIndex" -Status "Writing index ($($entries.Count)
 
 Write-Progress -Activity "ReviewIndex" -Completed -Status "Done"
 
-Write-Host "Index written: $OutputPath ($($entries.Count) file(s) indexed)" -ForegroundColor Green
+[Console]::Error.WriteLine("Index written: $OutputPath ($($entries.Count) file(s) indexed)")

@@ -64,7 +64,8 @@ SELECT
   SUM(CASE WHEN verdict = 'Confirmed' THEN 1 ELSE 0 END) as total_confirmed_n,
   SUM(CASE WHEN verdict = 'Defended' THEN 1 ELSE 0 END) as total_defended_n,
   SUM(CASE WHEN verdict = 'Flagged' THEN 1 ELSE 0 END) as total_flagged_n,
-  SUM(CASE WHEN verdict = 'Gap' THEN 1 ELSE 0 END) as total_gap_n
+  SUM(CASE WHEN verdict = 'Gap' THEN 1 ELSE 0 END) as total_gap_n,
+  SUM(CASE WHEN verdict = 'Struck' THEN 1 ELSE 0 END) as total_struck_n
 FROM review_findings WHERE review_id = ?;
 -- bind: [review_id]
 ```
@@ -78,9 +79,3 @@ SELECT COUNT(*) as total_rounds FROM review_checks WHERE review_id = ?;
 -- bind: [review_id]
 ```
 
-### Average aggregations
-```sql
-SELECT AVG(CAST(confidence AS FLOAT)) as final_confidence
-FROM review_checks WHERE review_id = ? AND check_name = 'judge-verdict';
--- bind: [review_id]
-```

@@ -46,6 +46,7 @@ SELECT DISTINCT s.file_path FROM lsp_symbols s
 JOIN review_clusters c ON s.id = c.symbol_id
 WHERE c.review_id = ?
 ORDER BY s.file_path;
+-- bind: [review_id]
 ```
 
 From these queries, read the full code for each file. Do not rely on the diff alone — the diff lacks surrounding context essential to identifying issues.

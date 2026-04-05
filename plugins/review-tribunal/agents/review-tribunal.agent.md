@@ -26,11 +26,12 @@ Phase order is strict; Phase 4a depends on Phase 4.
 **Collect configuration:**
 
 1. **Goal** (if not provided): Multi-line text field — "What should this review accomplish?"
-2. **Diff mode:** Radio — "Branch comparison" (default) | "Uncommitted changes"
+2. **Diff mode:** Radio — "Branch comparison" (default) | "Staged changes (git diff --staged)"
+   > Note: Staged changes mode reviews only changes added to the index (`git add`). Unstaged working-tree changes are not included.
 3. **Diff targets:**
    - If Branch: ask Base (default: develop) and Head (default: current branch)
-   - If Uncommitted: ask Branch (default: current branch)
-   - Validate: If base == head, re-prompt once. If still equal, stop.
+       - Validate: If base == head, re-prompt once. If still equal, stop.
+   - If Staged: ask Branch (default: current branch)
 4. **Tribunal size:** Radio — 1 (default) | 2 | 3
 5. **Starting debate rounds:** Text field (default: 1, accepts any positive integer)
 
@@ -91,6 +92,12 @@ After collecting configuration in Step 0, define these variables for dispatch:
 - `{skeptic_models}` — array of model names assigned to skeptic slots
 - `{advocate_models}` — array of model names assigned to advocate slots
 - `{judge_model}` — model name assigned to judge
+- `{round}` — current debate round number; starts at 1, incremented at each "Run another round" checkpoint
+- `{unscoped_files}` — list of files with no LSP server coverage (set in Phase A); surfaced to user in Phase A prompt; not passed to subagents (unscoped files do not appear in lsp_symbols or review_clusters)
+- `{diff_source}` — string identifying the diff origin; constructed from Step 0 inputs:
+    - Branch mode: `"branch:{base}..{head}"` (e.g. `branch:develop..feature/auth`)
+    - Staged mode: `"uncommitted:{branch}"` (e.g. `uncommitted:main`)
+  Set immediately after collecting diff targets in Step 0.
 
 ---
 
@@ -100,11 +107,11 @@ All review files are written to `{session_store}/files/`.
 
 Run [ReviewPatch.ps1](../scripts/ReviewPatch.ps1) with:
 - **Branch mode**: `-Mode branch -Base {base} -Head {head}`
-- **Uncommitted mode**: `-Mode uncommitted -Branch {branch}`
+- **Staged mode**: `-Mode uncommitted -Branch {branch}`
 
 Always set `-OutputPath "{session_store}/files/review-{review_id}.patch"`.
 
-Capture stdout as `{files_changed}` (newline-separated file paths). If non-zero exit, apply Rule 13.
+Capture stdout as `{files_changed}` (newline-separated file paths). If non-zero exit, apply Rule 9.
 
 If `{files_changed}` is empty: output `No changes detected between the specified sources.` and stop.
 
@@ -118,7 +125,7 @@ After the patch is written, run [ReviewIndex.ps1](../scripts/ReviewIndex.ps1) to
     -OutputPath "{session_store}/files/review-{review_id}.index"
 ```
 
-If the script exits non-zero, apply Rule 13.
+If the script exits non-zero, apply Rule 9.
 
 The index format is one entry per changed file:
 ```
@@ -137,6 +144,10 @@ INSERT INTO review_runs (
     tribunal_size, debate_rounds,
     skeptic_models, advocate_models, judge_model, status
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running');
+-- bind: [review_id, goal, diff_source, diff_path, index_path, files_changed,
+--        tribunal_size, debate_rounds,
+--        json_array(skeptic_models), json_array(advocate_models), judge_model]
+-- Note: status is the literal 'running' — not a bind parameter
 ```
 
 INSERT transcript header:
@@ -160,7 +171,7 @@ Always execute the full LSP scoping workflow before debate rounds. Use pipelined
 
 **Phase A — Discover and start LSP servers**
 
-Use `lsp-config` to find language servers for file extensions in `{files_changed}`. Start each. Files without LSP coverage go to `{unscoped_files}` (passed as full context to all dispatches). If unscoped files exist, ask user whether to proceed or install additional servers.
+Use `lsp-config` to find language servers for file extensions in `{files_changed}`. Start each. Files without LSP coverage go to `{unscoped_files}`. If unscoped files exist, ask user whether to proceed or install additional servers.
 
 **Phase B — Collect diagnostics (pre-confirmed issues)**
 
@@ -206,8 +217,8 @@ After Phase E, run `{debate_rounds}` rounds. Each round follows this exact seque
 
 Read all clusters from `review_clusters` table. Query to identify which cluster each symbol belongs to:
 ```sql
-SELECT DISTINCT c.cluster_id FROM review_clusters 
-WHERE review_id = ? ORDER BY c.cluster_id;
+SELECT DISTINCT c.cluster_id FROM review_clusters c
+WHERE c.review_id = ? ORDER BY c.cluster_id;
 -- bind: [review_id]
 ```
 
@@ -215,7 +226,7 @@ Invoke one `@review-tribunal-skeptic` instance per cluster, up to `{tribunal_siz
 
 Skeptics query SQLite for cluster details, symbols, and blast radius.
 
-Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from narrative text. If invalid JSON, apply Rule 13 (fail explicitly).
+Each Skeptic returns a JSON object. Parse it deterministically — do not infer values from narrative text. If invalid JSON, apply Rule 9 (fail explicitly).
 
 Each finding in `findings[]` carries a `locations[]` array — one entry per file location
 that is part of the finding. Most findings have one entry; multi-location findings have
@@ -257,7 +268,7 @@ ORDER BY id;
 
 Advocates then query SQLite for cluster details and blast radius to formulate responses.
 
-Each Advocate returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13.
+Each Advocate returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 9.
 
 Each response in `responses[]` carries a `reads[]` array — one entry per location the
 Advocate verified. A response covering a multi-location finding will have multiple entries.
@@ -274,7 +285,7 @@ Wait for all Advocates to complete. Invoke a single instance of `@review-tribuna
 
 Judge queries SQLite for all clusters, symbols, and blast radius to see the full picture. Judge also computes and returns aggregates in a `metadata` key.
 
-The Judge returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 13. Extract `{judge_metadata}` from the return.
+The Judge returns a JSON object. Parse it deterministically. If invalid JSON, apply Rule 9. Extract `{judge_metadata}` from the return.
 
 Confirmed findings carry `location` (primary) and `additional_locations[]` (any further
 sites where the defect manifests or must be fixed). Both are used when persisting findings
@@ -293,8 +304,10 @@ Parse `verdict.struck` from the Judge's JSON. For each entry, update transcript 
 
 ```sql
 UPDATE review_transcript_entries SET status = 'struck', struck_reason = ? WHERE id = ?;
+-- bind: [struck.reason, struck.entry_id]
 INSERT INTO review_findings (review_id, round, finding_n, verdict, issue, location)
 VALUES (?, ?, ?, 'Struck', ?, NULL);
+-- bind: [review_id, round, struck.n, struck.issue]
 ```
 
 In subsequent rounds, subagents retrieve only `status = 'active'` transcript entries, naturally filtering out struck findings.
@@ -337,9 +350,9 @@ Derive counts directly from the parsed JSON arrays:
 
 INSERT check:
 ```sql
-INSERT INTO review_checks (review_id, check_name, round, confirmed_n, defended_n, flagged_n, confidence, passed)
-VALUES (?, 'judge-verdict', ?, ?, ?, ?, ?, ?);
--- bind: [review_id, round, confirmed_n, defended_n, flagged_n, confidence, passed]
+INSERT INTO review_checks (review_id, check_name, round, confirmed_n, defended_n, flagged_n, gap_n, struck_n, confidence, passed)
+VALUES (?, 'judge-verdict', ?, ?, ?, ?, ?, ?, ?, ?);
+-- bind: [review_id, round, confirmed_n, defended_n, flagged_n, gap_n, struck_n, confidence, passed]
 ```
 
 ### User checkpoint
