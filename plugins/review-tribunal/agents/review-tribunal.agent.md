@@ -145,6 +145,10 @@ INSERT INTO review_runs (
     tribunal_size, debate_rounds,
     skeptic_models, advocate_models, judge_model, status
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running');
+-- bind: [review_id, goal, diff_source, diff_path, index_path, files_changed,
+--        tribunal_size, debate_rounds,
+--        json_array(skeptic_models), json_array(advocate_models), judge_model]
+-- Note: status is the literal 'running' — not a bind parameter
 ```
 
 INSERT transcript header:

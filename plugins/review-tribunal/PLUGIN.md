@@ -511,9 +511,10 @@ review-tribunal/
 │   ├── review-tribunal-advocate.agent.md        ← defends implementation (dispatched)
 │   └── review-tribunal-judge.agent.md           ← rules on all findings (dispatched)
 ├── references/
-│   ├── review-tribunal-lsp-scoping.md          ← LSP workflow (Phases A-E)
 │   ├── review-tribunal-schema.md               ← SQLite schema
-│   └── review-tribunal-invocation-examples.md  ← usage examples
+│   ├── review-tribunal-invocation-examples.md  ← usage examples
+│   ├── review-tribunal-subagent-behavior.md    ← common subagent workflow (Steps 1–3)
+│   └── sql-bindings-reference.md              ← SQL binding patterns and examples
 ├── scripts/
 │   ├── ReviewPatch.ps1                         ← generate unified diff
 │   └── ReviewIndex.ps1                         ← generate file→line index
